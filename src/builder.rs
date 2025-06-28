@@ -101,6 +101,8 @@ impl std::str::FromStr for LLMBackend {
 pub struct LLMBuilder {
     /// Selected backend provider
     backend: Option<LLMBackend>,
+    /// Proxy URL. If set, the SSL certificate checking is disabled for easier use in MITM proxies.
+    proxy_url: Option<String>,
     /// API key for authentication with the provider
     api_key: Option<String>,
     /// Base URL for API requests (primarily for self-hosted instances)
@@ -188,6 +190,12 @@ impl LLMBuilder {
     /// Sets the backend provider to use.
     pub fn backend(mut self, backend: LLMBackend) -> Self {
         self.backend = Some(backend);
+        self
+    }
+
+    /// Sets the proxy URL.
+    pub fn proxy_url(mut self, url: impl Into<String>) -> Self {
+        self.proxy_url = Some(url.into());
         self
     }
 
@@ -551,8 +559,9 @@ impl LLMBuilder {
     /// - Required configuration like API keys are missing
     pub fn build(self) -> Result<Box<dyn LLMProvider>, LLMError> {
         log::debug!(
-            "Building LLM provider. backend={:?} model={:?} tools={} tool_choice={:?} stream={:?} temp={:?} enable_web_search={:?} web_search_context={:?} web_search_user_location_type={:?} web_search_user_location_approximate_country={:?} web_search_user_location_approximate_city={:?} web_search_user_location_approximate_region={:?}",
+            "Building LLM provider. backend={:?} proxy_url={:?} model={:?} tools={} tool_choice={:?} stream={:?} temp={:?} enable_web_search={:?} web_search_context={:?} web_search_user_location_type={:?} web_search_user_location_approximate_country={:?} web_search_user_location_approximate_city={:?} web_search_user_location_approximate_region={:?}",
             self.backend,
+            self.proxy_url,
             self.model,
             self.tools.as_ref().map(|v| v.len()).unwrap_or(0),
             self.tool_choice,
@@ -786,6 +795,7 @@ impl LLMBuilder {
 
                     let google = crate::backends::google::Google::new(
                         api_key,
+                        self.proxy_url,
                         self.model,
                         self.max_tokens,
                         self.temperature,

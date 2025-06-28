@@ -1,3 +1,7 @@
+# Patches
+
+- added `proxy_url` to the builder and to the `google.rs` backend
+
 # LLM
 
 > **Note**: This crate name previously belonged to another project. The current implementation represents a new and different library. The previous crate is now archived and will not receive any updates. **ref: https://github.com/rustformers/llm**

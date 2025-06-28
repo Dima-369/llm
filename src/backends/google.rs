@@ -20,6 +20,7 @@
 //! async fn main() {
 //! let client = Google::new(
 //!     "your-api-key",
+//!     None, // Use no proxy
 //!     None, // Use default model
 //!     Some(1000), // Max tokens
 //!     Some(0.7), // Temperature
@@ -450,6 +451,7 @@ impl Google {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         api_key: impl Into<String>,
+        proxy_url: Option<String>,
         model: Option<String>,
         max_tokens: Option<u32>,
         temperature: Option<f32>,
@@ -464,6 +466,12 @@ impl Google {
         let mut builder = Client::builder();
         if let Some(sec) = timeout_seconds {
             builder = builder.timeout(std::time::Duration::from_secs(sec));
+        }
+        if let Some(proxy_url) = proxy_url {
+            let proxy = reqwest::Proxy::all(&proxy_url).expect("Failed to create proxy");
+            builder = builder
+                .proxy(proxy)
+                .danger_accept_invalid_certs(true);
         }
         Self {
             api_key: api_key.into(),
@@ -842,7 +850,8 @@ impl ChatProvider for Google {
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
-    ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError> {
+    ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError>
+    {
         if self.api_key.is_empty() {
             return Err(LLMError::AuthError("Missing Google API key".to_string()));
         }
@@ -929,7 +938,10 @@ impl ChatProvider for Google {
             });
         }
 
-        Ok(crate::chat::create_sse_stream(response, parse_google_sse_chunk))
+        Ok(crate::chat::create_sse_stream(
+            response,
+            parse_google_sse_chunk,
+        ))
     }
 }
 
@@ -1024,10 +1036,10 @@ impl LLMProvider for Google {
 fn parse_google_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
     for line in chunk.lines() {
         let line = line.trim();
-        
+
         if line.starts_with("data: ") {
             let data = &line[6..];
-            
+
             match serde_json::from_str::<GoogleStreamResponse>(data) {
                 Ok(response) => {
                     if let Some(candidates) = response.candidates {
@@ -1045,7 +1057,7 @@ fn parse_google_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
             }
         }
     }
-    
+
     Ok(None)
 }
 
