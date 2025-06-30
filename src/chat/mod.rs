@@ -237,10 +237,18 @@ impl Serialize for ToolChoice {
     }
 }
 
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct Usage {
+    pub total_tokens: u32,
+}
+
 pub trait ChatResponse: std::fmt::Debug + std::fmt::Display {
     fn text(&self) -> Option<String>;
     fn tool_calls(&self) -> Option<Vec<ToolCall>>;
     fn thinking(&self) -> Option<String> {
+        None
+    }
+    fn usage(&self) -> Option<Usage> {
         None
     }
 }

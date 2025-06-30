@@ -42,6 +42,7 @@
 //! }
 //! ```
 
+use crate::chat::Usage;
 use crate::{
     chat::{
         ChatMessage, ChatProvider, ChatResponse, ChatRole, MessageType, StructuredOutputFormat,
@@ -61,6 +62,13 @@ use futures::stream::Stream;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+/// Only the total tokens are parsed, even though the API also returns promptTokenCount and candidatesTokenCount.
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct GoogleUsageMetadata {
+    total_token_count: u32,
+}
 
 /// Client for interacting with Google's Gemini API.
 ///
@@ -162,6 +170,8 @@ struct GoogleGenerationConfig {
 struct GoogleChatResponse {
     /// Generated completion candidates
     candidates: Vec<GoogleCandidate>,
+    #[serde(rename = "usageMetadata", default)]
+    usage_metadata: GoogleUsageMetadata,
 }
 
 /// Response from the streaming chat completion API
@@ -270,6 +280,12 @@ impl ChatResponse for GoogleChatResponse {
                     }]
                 })
             }
+        })
+    }
+
+    fn usage(&self) -> Option<Usage> {
+        Some(Usage {
+            total_tokens: self.usage_metadata.total_token_count,
         })
     }
 }
@@ -469,9 +485,7 @@ impl Google {
         }
         if let Some(proxy_url) = proxy_url {
             let proxy = reqwest::Proxy::all(&proxy_url).expect("Failed to create proxy");
-            builder = builder
-                .proxy(proxy)
-                .danger_accept_invalid_certs(true);
+            builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
         Self {
             api_key: api_key.into(),
