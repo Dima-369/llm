@@ -993,7 +993,7 @@ impl ParamBuilder {
 
 /// Builder for function tools
 pub struct FunctionBuilder {
-    name: String,
+    pub name: String,
     description: String,
     parameters: Vec<ParamBuilder>,
     required: Vec<String>,

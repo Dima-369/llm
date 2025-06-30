@@ -1,6 +1,7 @@
 # Patches
 
 - added `proxy_url` to the builder and to the `google.rs` backend
+- made `name: String` in `FunctionBuilder` public, so all available tool names can be retrieved
 
 # LLM
 
