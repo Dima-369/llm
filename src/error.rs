@@ -22,6 +22,8 @@ pub enum LLMError {
     JsonError(String),
     /// Tool configuration error
     ToolConfigError(String),
+    /// Too many requests (HTTP 429) error with the raw response body.
+    TooManyRequests(String),
 }
 
 impl fmt::Display for LLMError {
@@ -44,6 +46,7 @@ impl fmt::Display for LLMError {
             }
             LLMError::JsonError(e) => write!(f, "JSON Parse Error: {}", e),
             LLMError::ToolConfigError(e) => write!(f, "Tool Configuration Error: {}", e),
+            LLMError::TooManyRequests(e) => write!(f, "Too Many Requests (429): {}", e),
         }
     }
 }

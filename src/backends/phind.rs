@@ -148,6 +148,10 @@ impl Phind {
                     Ok(Box::new(PhindResponse { content: full_text }))
                 }
             }
+            StatusCode::TOO_MANY_REQUESTS => {
+                let raw_response = response.text().await?;
+                Err(LLMError::TooManyRequests(raw_response))
+            }
             _ => {
                 let error_text = response.text().await?;
                 let error_json: Value = serde_json::from_str(&error_text)

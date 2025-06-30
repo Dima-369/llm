@@ -132,8 +132,14 @@ impl SpeechToTextProvider for ElevenLabs {
             req = req.timeout(Duration::from_secs(t));
         }
 
-        let resp = req.send().await?.error_for_status()?;
-        let text = resp.text().await?;
+        let resp = req.send().await?;
+
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let raw_response = resp.text().await?;
+            return Err(LLMError::TooManyRequests(raw_response));
+        }
+
+        let text = resp.error_for_status()?.text().await?;
         let raw = text.clone();
         let parsed: ElevenLabsResponse =
             serde_json::from_str(&text).map_err(|e| LLMError::ResponseFormatError {
@@ -186,8 +192,14 @@ impl SpeechToTextProvider for ElevenLabs {
             req = req.timeout(Duration::from_secs(t));
         }
 
-        let resp = req.send().await?.error_for_status()?;
-        let text = resp.text().await?;
+        let resp = req.send().await?;
+
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let raw_response = resp.text().await?;
+            return Err(LLMError::TooManyRequests(raw_response));
+        }
+
+        let text = resp.error_for_status()?.text().await?;
         let raw = text.clone();
         let parsed: ElevenLabsResponse =
             serde_json::from_str(&text).map_err(|e| LLMError::ResponseFormatError {
@@ -300,8 +312,14 @@ impl TextToSpeechProvider for ElevenLabs {
             req = req.timeout(Duration::from_secs(t));
         }
 
-        let resp = req.send().await?.error_for_status()?;
-        let audio_data = resp.bytes().await?;
+        let resp = req.send().await?;
+
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let raw_response = resp.text().await?;
+            return Err(LLMError::TooManyRequests(raw_response));
+        }
+
+        let audio_data = resp.error_for_status()?.bytes().await?;
 
         Ok(audio_data.to_vec())
     }

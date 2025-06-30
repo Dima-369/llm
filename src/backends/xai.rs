@@ -388,6 +388,11 @@ impl ChatProvider for XAI {
 
         log::debug!("XAI HTTP status: {}", resp.status());
 
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let raw_response = resp.text().await?;
+            return Err(LLMError::TooManyRequests(raw_response));
+        }
+
         let resp = resp.error_for_status()?;
 
         let json_resp: XAIChatResponse = resp.json().await?;

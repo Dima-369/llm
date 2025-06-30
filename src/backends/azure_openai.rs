@@ -499,6 +499,11 @@ impl ChatProvider for AzureOpenAI {
 
         log::debug!("Azure OpenAI HTTP status: {}", response.status());
 
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let raw_response = response.text().await?;
+            return Err(LLMError::TooManyRequests(raw_response));
+        }
+
         // If we got a non-200 response, let's get the error details
         if !response.status().is_success() {
             let status = response.status();

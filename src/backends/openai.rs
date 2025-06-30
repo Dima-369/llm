@@ -552,6 +552,11 @@ impl ChatProvider for OpenAI {
 
         log::debug!("OpenAI HTTP status: {}", response.status());
 
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let raw_response = response.text().await?;
+            return Err(LLMError::TooManyRequests(raw_response));
+        }
+
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await?;

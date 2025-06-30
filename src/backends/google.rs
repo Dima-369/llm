@@ -655,6 +655,11 @@ impl ChatProvider for Google {
 
         log::debug!("Google Gemini HTTP status: {}", resp.status());
 
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let raw_response = resp.text().await?;
+            return Err(LLMError::TooManyRequests(raw_response));
+        }
+
         let resp = resp.error_for_status()?;
 
         // Get the raw response text for debugging
