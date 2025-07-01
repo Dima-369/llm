@@ -594,6 +594,7 @@ impl LLMBuilder {
                     })?;
                     Box::new(crate::backends::openai::OpenAI::new(
                         key,
+                        self.proxy_url,
                         self.base_url,
                         self.model,
                         self.max_tokens,
@@ -633,6 +634,7 @@ impl LLMBuilder {
 
                     let elevenlabs = crate::backends::elevenlabs::ElevenLabs::new(
                         api_key,
+                        self.proxy_url,
                         self.model.unwrap_or("eleven_multilingual_v2".to_string()),
                         "https://api.elevenlabs.io/v1".to_string(),
                         self.timeout_seconds,
@@ -655,6 +657,7 @@ impl LLMBuilder {
 
                     let anthro = crate::backends::anthropic::Anthropic::new(
                         api_key,
+                        self.proxy_url,
                         self.model,
                         self.max_tokens,
                         self.temperature,
@@ -686,6 +689,7 @@ impl LLMBuilder {
                     let ollama = crate::backends::ollama::Ollama::new(
                         url,
                         self.api_key,
+                        self.proxy_url,
                         self.model,
                         self.max_tokens,
                         self.temperature,
@@ -714,6 +718,7 @@ impl LLMBuilder {
 
                     let deepseek = crate::backends::deepseek::DeepSeek::new(
                         api_key,
+                        self.proxy_url,
                         self.model,
                         self.max_tokens,
                         self.temperature,
@@ -739,6 +744,7 @@ impl LLMBuilder {
 
                     let xai = crate::backends::xai::XAI::new(
                         api_key,
+                        self.proxy_url,
                         self.model,
                         self.max_tokens,
                         self.temperature,
@@ -770,6 +776,7 @@ impl LLMBuilder {
                 {
                     let phind = crate::backends::phind::Phind::new(
                         self.model,
+                        self.proxy_url,
                         self.max_tokens,
                         self.temperature,
                         self.timeout_seconds,
@@ -824,6 +831,7 @@ impl LLMBuilder {
 
                     let groq = crate::backends::groq::Groq::new(
                         api_key,
+                        self.proxy_url,
                         self.model,
                         self.max_tokens,
                         self.temperature,
@@ -866,6 +874,7 @@ impl LLMBuilder {
 
                     Box::new(crate::backends::azure_openai::AzureOpenAI::new(
                         key,
+                        self.proxy_url,
                         api_version,
                         deployment,
                         endpoint,

@@ -268,6 +268,7 @@ impl Ollama {
     pub fn new(
         base_url: impl Into<String>,
         api_key: Option<String>,
+        proxy_url: Option<String>,
         model: Option<String>,
         max_tokens: Option<u32>,
         temperature: Option<f32>,
@@ -282,6 +283,10 @@ impl Ollama {
         let mut builder = Client::builder();
         if let Some(sec) = timeout_seconds {
             builder = builder.timeout(std::time::Duration::from_secs(sec));
+        }
+        if let Some(proxy_url) = proxy_url {
+            let proxy = reqwest::Proxy::all(&proxy_url).expect("Failed to create proxy");
+            builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
         Self {
             base_url: base_url.into(),

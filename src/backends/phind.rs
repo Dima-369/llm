@@ -71,6 +71,7 @@ impl Phind {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         model: Option<String>,
+        proxy_url: Option<String>,
         max_tokens: Option<u32>,
         temperature: Option<f32>,
         timeout_seconds: Option<u64>,
@@ -82,6 +83,10 @@ impl Phind {
         let mut builder = Client::builder();
         if let Some(sec) = timeout_seconds {
             builder = builder.timeout(std::time::Duration::from_secs(sec));
+        }
+        if let Some(proxy_url) = proxy_url {
+            let proxy = reqwest::Proxy::all(&proxy_url).expect("Failed to create proxy");
+            builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
         Self {
             model: model.unwrap_or_else(|| "Phind-70B".to_string()),

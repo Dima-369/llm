@@ -335,6 +335,7 @@ impl AzureOpenAI {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         api_key: impl Into<String>,
+        proxy_url: Option<String>,
         api_version: impl Into<String>,
         deployment_id: impl Into<String>,
         endpoint: impl Into<String>,
@@ -356,6 +357,10 @@ impl AzureOpenAI {
         let mut builder = Client::builder();
         if let Some(sec) = timeout_seconds {
             builder = builder.timeout(std::time::Duration::from_secs(sec));
+        }
+        if let Some(proxy_url) = proxy_url {
+            let proxy = reqwest::Proxy::all(&proxy_url).expect("Failed to create proxy");
+            builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
 
         let endpoint = endpoint.into();

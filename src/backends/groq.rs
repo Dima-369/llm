@@ -93,6 +93,7 @@ impl Groq {
     /// Creates a new Groq client with the specified configuration.
     pub fn new(
         api_key: impl Into<String>,
+        proxy_url: Option<String>,
         model: Option<String>,
         max_tokens: Option<u32>,
         temperature: Option<f32>,
@@ -105,6 +106,10 @@ impl Groq {
         let mut builder = Client::builder();
         if let Some(sec) = timeout_seconds {
             builder = builder.timeout(std::time::Duration::from_secs(sec));
+        }
+        if let Some(proxy_url) = proxy_url {
+            let proxy = reqwest::Proxy::all(&proxy_url).expect("Failed to create proxy");
+            builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
         Self {
             api_key: api_key.into(),

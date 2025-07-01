@@ -87,17 +87,23 @@ impl ElevenLabs {
     /// A new ElevenLabs instance
     pub fn new(
         api_key: String,
+        proxy_url: Option<String>,
         model_id: String,
         base_url: String,
         timeout_seconds: Option<u64>,
         voice: Option<String>,
     ) -> Self {
+        let mut builder = Client::builder();
+        if let Some(proxy_url) = proxy_url {
+            let proxy = reqwest::Proxy::all(&proxy_url).expect("Failed to create proxy");
+            builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
+        }
         Self {
             api_key,
             model_id,
             base_url,
             timeout_seconds,
-            client: Client::new(),
+            client: builder.build().expect("Failed to build reqwest Client"),
             voice,
         }
     }
