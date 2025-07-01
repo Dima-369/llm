@@ -30,6 +30,7 @@ full = [
     "api",
     "elevenlabs",
     "agent",
+    "cohere",
 ]
 openai = []
 anthropic = []
@@ -40,6 +41,7 @@ phind = []
 google = []
 groq = []
 azure_openai = []
+cohere = []
 cli = ["full", "dep:clap", "dep:rustyline", "dep:colored", "dep:spinners"]
 api = ["dep:axum", "dep:tower-http", "dep:uuid"]
 elevenlabs = []

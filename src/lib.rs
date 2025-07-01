@@ -115,3 +115,23 @@ pub struct FunctionCall {
     /// The arguments to pass to the function, typically serialized as a JSON string.
     pub arguments: String,
 }
+
+impl std::fmt::Display for ToolCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{\n  \"id\": \"{}\",\n  \"type\": \"{}\",\n  \"function\": {}\n}}",
+            self.id, self.call_type, self.function
+        )
+    }
+}
+
+impl std::fmt::Display for FunctionCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{\n  \"name\": \"{}\",\n  \"arguments\": {}\n}}",
+            self.name, self.arguments
+        )
+    }
+}

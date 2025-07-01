@@ -1,10 +1,9 @@
-//! OpenAI API client implementation for chat and completion functionality.
-//!
-//! This module provides integration with OpenAI's GPT models through their API.
+//! Cohere API client implementation for chat and completion functionality.
+//! 
+//! This module provides integration with Cohere's models through their API.
 
-use std::time::Duration;
 
-#[cfg(feature = "openai")]
+
 use crate::{
     builder::LLMBackend,
     chat::Tool,
@@ -29,10 +28,10 @@ use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Client for interacting with OpenAI's API.
-///
-/// Provides methods for chat and completion requests using OpenAI's models.
-pub struct OpenAI {
+/// Client for interacting with Cohere's API.
+/// 
+/// Provides methods for chat and completion requests using Cohere's models.
+pub struct Cohere {
     pub api_key: String,
     pub base_url: Url,
     pub model: String,
@@ -51,19 +50,12 @@ pub struct OpenAI {
     pub reasoning_effort: Option<String>,
     /// JSON schema for structured output
     pub json_schema: Option<StructuredOutputFormat>,
-    pub voice: Option<String>,
-    pub enable_web_search: Option<bool>,
-    pub web_search_context_size: Option<String>,
-    pub web_search_user_location_type: Option<String>,
-    pub web_search_user_location_approximate_country: Option<String>,
-    pub web_search_user_location_approximate_city: Option<String>,
-    pub web_search_user_location_approximate_region: Option<String>,
     client: Client,
 }
 
-/// Individual message in an OpenAI chat conversation.
+/// Individual message in an Cohere chat conversation.
 #[derive(Serialize, Debug)]
-struct OpenAIChatMessage<'a> {
+struct CohereChatMessage<'a> {
     #[allow(dead_code)]
     role: &'a str,
     #[serde(
@@ -72,23 +64,23 @@ struct OpenAIChatMessage<'a> {
     )]
     content: Option<Either<Vec<MessageContent<'a>>, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    tool_calls: Option<Vec<OpenAIFunctionCall<'a>>>,
+    tool_calls: Option<Vec<CohereFunctionCall<'a>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_call_id: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
-struct OpenAIFunctionPayload<'a> {
+struct CohereFunctionPayload<'a> {
     name: &'a str,
     arguments: &'a str,
 }
 
 #[derive(Serialize, Debug)]
-struct OpenAIFunctionCall<'a> {
+struct CohereFunctionCall<'a> {
     id: &'a str,
     #[serde(rename = "type")]
     content_type: &'a str,
-    function: OpenAIFunctionPayload<'a>,
+    function: CohereFunctionPayload<'a>,
 }
 
 #[derive(Serialize, Debug)]
@@ -105,14 +97,14 @@ struct MessageContent<'a> {
     tool_output: Option<&'a str>,
 }
 
-/// Individual image message in an OpenAI chat conversation.
+/// Individual image message in an Cohere chat conversation.
 #[derive(Serialize, Debug)]
 struct ImageUrlContent<'a> {
     url: &'a str,
 }
 
 #[derive(Serialize)]
-struct OpenAIEmbeddingRequest {
+struct CohereEmbeddingRequest {
     model: String,
     input: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -121,11 +113,11 @@ struct OpenAIEmbeddingRequest {
     dimensions: Option<u32>,
 }
 
-/// Request payload for OpenAI's chat API endpoint.
+/// Request payload for Cohere's chat API endpoint.
 #[derive(Serialize, Debug)]
-struct OpenAIChatRequest<'a> {
+struct CohereChatRequest<'a> {
     model: &'a str,
-    messages: Vec<OpenAIChatMessage<'a>>,
+    messages: Vec<CohereChatMessage<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -142,28 +134,26 @@ struct OpenAIChatRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     reasoning_effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    response_format: Option<OpenAIResponseFormat>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    web_search_options: Option<OpenAIWebSearchOptions>,
+    response_format: Option<CohereResponseFormat>,
 }
 
 
 
-/// Response from OpenAI's chat API endpoint.
+/// Response from Cohere's chat API endpoint.
 #[derive(Deserialize, Debug)]
-struct OpenAIChatResponse {
-    choices: Vec<OpenAIChatChoice>,
+struct CohereChatResponse {
+    choices: Vec<CohereChatChoice>,
 }
 
-/// Individual choice within an OpenAI chat API response.
+/// Individual choice within an Cohere chat API response.
 #[derive(Deserialize, Debug)]
-struct OpenAIChatChoice {
-    message: OpenAIChatMsg,
+struct CohereChatChoice {
+    message: CohereChatMsg,
 }
 
-/// Message content within an OpenAI chat API response.
+/// Message content within an Cohere chat API response.
 #[derive(Deserialize, Debug)]
-struct OpenAIChatMsg {
+struct CohereChatMsg {
     #[allow(dead_code)]
     role: String,
     content: Option<String>,
@@ -171,37 +161,37 @@ struct OpenAIChatMsg {
 }
 
 #[derive(Deserialize, Debug)]
-struct OpenAIEmbeddingData {
+struct CohereEmbeddingData {
     embedding: Vec<f32>,
 }
 #[derive(Deserialize, Debug)]
-struct OpenAIEmbeddingResponse {
-    data: Vec<OpenAIEmbeddingData>,
+struct CohereEmbeddingResponse {
+    data: Vec<CohereEmbeddingData>,
 }
 
-/// Response from OpenAI's streaming chat API endpoint.
+/// Response from Cohere's streaming chat API endpoint.
 #[derive(Deserialize, Debug)]
-struct OpenAIChatStreamResponse {
-    choices: Vec<OpenAIChatStreamChoice>,
+struct CohereChatStreamResponse {
+    choices: Vec<CohereChatStreamChoice>,
 }
 
-/// Individual choice within an OpenAI streaming chat API response.
+/// Individual choice within an Cohere streaming chat API response.
 #[derive(Deserialize, Debug)]
-struct OpenAIChatStreamChoice {
-    delta: OpenAIChatStreamDelta,
+struct CohereChatStreamChoice {
+    delta: CohereChatStreamDelta,
 }
 
-/// Delta content within an OpenAI streaming chat API response.
+/// Delta content within an Cohere streaming chat API response.
 #[derive(Deserialize, Debug)]
-struct OpenAIChatStreamDelta {
+struct CohereChatStreamDelta {
     content: Option<String>,
 }
 
 /// An object specifying the format that the model must output.
-///Setting to `{ "type": "json_schema", "json_schema": {...} }` enables Structured Outputs which ensures the model will match your supplied JSON schema. Learn more in the [Structured Outputs guide](https://platform.openai.com/docs/guides/structured-outputs).
+///Setting to `{ "type": "json_schema", "json_schema": {...} }` enables Structured Outputs which ensures the model will match your supplied JSON schema. Learn more in the [Structured Outputs guide](https://platform.cohere.com/docs/guides/structured-outputs).
 /// Setting to `{ "type": "json_object" }` enables the older JSON mode, which ensures the message the model generates is valid JSON. Using `json_schema` is preferred for models that support it.
 #[derive(Deserialize, Debug, Serialize)]
-enum OpenAIResponseType {
+enum CohereResponseType {
     #[serde(rename = "text")]
     Text,
     #[serde(rename = "json_schema")]
@@ -211,48 +201,25 @@ enum OpenAIResponseType {
 }
 
 #[derive(Deserialize, Debug, Serialize)]
-struct OpenAIResponseFormat {
+struct CohereResponseFormat {
     #[serde(rename = "type")]
-    response_type: OpenAIResponseType,
+    response_type: CohereResponseType,
     #[serde(skip_serializing_if = "Option::is_none")]
     json_schema: Option<StructuredOutputFormat>,
 }
 
-#[derive(Deserialize, Debug, Serialize)]
-struct OpenAIWebSearchOptions {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    user_location: Option<UserLocation>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    search_context_size: Option<String>,
-}
-
-#[derive(Deserialize, Debug, Serialize)]
-struct UserLocation {
-    #[serde(rename = "type")]
-    location_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    approximate: Option<ApproximateLocation>,
-}
-
-#[derive(Deserialize, Debug, Serialize)]
-struct ApproximateLocation {
-    country: String,
-    city: String,
-    region: String,
-}
-
-impl From<StructuredOutputFormat> for OpenAIResponseFormat {
-    /// Modify the schema to ensure that it meets OpenAI's requirements.
+impl From<StructuredOutputFormat> for CohereResponseFormat {
+    /// Modify the schema to ensure that it meets Cohere's requirements.
     fn from(structured_response_format: StructuredOutputFormat) -> Self {
         // It's possible to pass a StructuredOutputJsonSchema without an actual schema.
         // In this case, just pass the StructuredOutputJsonSchema object without modifying it.
         match structured_response_format.schema {
-            None => OpenAIResponseFormat {
-                response_type: OpenAIResponseType::JsonSchema,
+            None => CohereResponseFormat {
+                response_type: CohereResponseType::JsonSchema,
                 json_schema: Some(structured_response_format),
             },
             Some(mut schema) => {
-                // Although [OpenAI's specifications](https://platform.openai.com/docs/guides/structured-outputs?api-mode=chat#additionalproperties-false-must-always-be-set-in-objects) say that the "additionalProperties" field is required, my testing shows that it is not.
+                // Although [Cohere's specifications](https://platform.cohere.com/docs/guides/structured-outputs?api-mode=chat#additionalproperties-false-must-always-be-set-in-objects) say that the "additionalProperties" field is required, my testing shows that it is not.
                 // Just to be safe, add it to the schema if it is missing.
                 schema = if schema.get("additionalProperties").is_none() {
                     schema["additionalProperties"] = serde_json::json!(false);
@@ -261,8 +228,8 @@ impl From<StructuredOutputFormat> for OpenAIResponseFormat {
                     schema
                 };
 
-                OpenAIResponseFormat {
-                    response_type: OpenAIResponseType::JsonSchema,
+                CohereResponseFormat {
+                    response_type: CohereResponseType::JsonSchema,
                     json_schema: Some(StructuredOutputFormat {
                         name: structured_response_format.name,
                         description: structured_response_format.description,
@@ -275,7 +242,7 @@ impl From<StructuredOutputFormat> for OpenAIResponseFormat {
     }
 }
 
-impl ChatResponse for OpenAIChatResponse {
+impl ChatResponse for CohereChatResponse {
     fn text(&self) -> Option<String> {
         self.choices.first().and_then(|c| c.message.content.clone())
     }
@@ -287,7 +254,7 @@ impl ChatResponse for OpenAIChatResponse {
     }
 }
 
-impl std::fmt::Display for OpenAIChatResponse {
+impl std::fmt::Display for CohereChatResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match (
             &self.choices.first().unwrap().message.content,
@@ -311,12 +278,12 @@ impl std::fmt::Display for OpenAIChatResponse {
     }
 }
 
-impl OpenAI {
-    /// Creates a new OpenAI client with the specified configuration.
-    ///
+impl Cohere {
+    /// Creates a new Cohere client with the specified configuration.
+    /// 
     /// # Arguments
-    ///
-    /// * `api_key` - OpenAI API key
+    /// 
+    /// * `api_key` - Cohere API key
     /// * `model` - Model to use (defaults to "gpt-3.5-turbo")
     /// * `max_tokens` - Maximum tokens to generate
     /// * `temperature` - Sampling temperature
@@ -350,13 +317,6 @@ impl OpenAI {
         tool_choice: Option<ToolChoice>,
         reasoning_effort: Option<String>,
         json_schema: Option<StructuredOutputFormat>,
-        voice: Option<String>,
-        enable_web_search: Option<bool>,
-        web_search_context_size: Option<String>,
-        web_search_user_location_type: Option<String>,
-        web_search_user_location_approximate_country: Option<String>,
-        web_search_user_location_approximate_city: Option<String>,
-        web_search_user_location_approximate_region: Option<String>,
     ) -> Self {
         let mut builder = Client::builder();
         if let Some(sec) = timeout_seconds {
@@ -369,10 +329,10 @@ impl OpenAI {
         Self {
             api_key: api_key.into(),
             base_url: Url::parse(
-                &base_url.unwrap_or_else(|| "https://api.openai.com/v1/".to_owned()),
+                &base_url.unwrap_or_else(|| "https://api.cohere.ai/compatibility/v1/".to_owned()),
             )
             .expect("Failed to prase base Url"),
-            model: model.unwrap_or("gpt-3.5-turbo".to_string()),
+            model: model.unwrap_or("command-r-plus".to_string()),
             max_tokens,
             temperature,
             system,
@@ -387,27 +347,20 @@ impl OpenAI {
             client: builder.build().expect("Failed to build reqwest Client"),
             reasoning_effort,
             json_schema,
-            voice,
-            enable_web_search,
-            web_search_context_size,
-            web_search_user_location_type,
-            web_search_user_location_approximate_country,
-            web_search_user_location_approximate_city,
-            web_search_user_location_approximate_region,
         }
     }
 }
 
 #[async_trait]
-impl ChatProvider for OpenAI {
-    /// Sends a chat request to OpenAI's API.
-    ///
+impl ChatProvider for Cohere {
+    /// Sends a chat request to Cohere's API.
+    /// 
     /// # Arguments
-    ///
+    /// 
     /// * `messages` - Slice of chat messages representing the conversation
     /// * `tools` - Optional slice of tools to use in the chat
     /// # Returns
-    ///
+    /// 
     /// The model's response text or an error
     async fn chat_with_tools(
         &self,
@@ -415,20 +368,20 @@ impl ChatProvider for OpenAI {
         tools: Option<&[Tool]>,
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
         if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing OpenAI API key".to_string()));
+            return Err(LLMError::AuthError("Missing Cohere API key".to_string()));
         }
 
         // Clone the messages to have an owned mutable vector.
         let messages = messages.to_vec();
 
-        let mut openai_msgs: Vec<OpenAIChatMessage> = vec![];
+        let mut cohere_msgs: Vec<CohereChatMessage> = vec![];
 
         for msg in messages {
             if let MessageType::ToolResult(ref results) = msg.message_type {
                 for result in results {
-                    openai_msgs.push(
+                    cohere_msgs.push(
                         // Clone strings to own them
-                        OpenAIChatMessage {
+                        CohereChatMessage {
                             role: "tool",
                             tool_call_id: Some(result.id.clone()),
                             tool_calls: None,
@@ -437,15 +390,15 @@ impl ChatProvider for OpenAI {
                     );
                 }
             } else {
-                openai_msgs.push(chat_message_to_api_message(msg))
+                cohere_msgs.push(chat_message_to_api_message(msg))
             }
         }
 
         if let Some(system) = &self.system {
-            openai_msgs.insert(
+            cohere_msgs.insert(
                 0,
-                OpenAIChatMessage {
-                    role: "system",
+                CohereChatMessage {
+                    role: "developer",
                     content: Some(Left(vec![MessageContent {
                         message_type: Some("text"),
                         text: Some(system),
@@ -459,8 +412,8 @@ impl ChatProvider for OpenAI {
             );
         }
 
-        let response_format: Option<OpenAIResponseFormat> =
-            self.json_schema.clone().map(|s| s.into());
+        let response_format:
+            Option<CohereResponseFormat> = self.json_schema.clone().map(|s| s.into());
 
         let request_tools = tools.map(|t| t.to_vec()).or_else(|| self.tools.clone());
 
@@ -470,42 +423,9 @@ impl ChatProvider for OpenAI {
             None
         };
 
-        let web_search_options = if self.enable_web_search.unwrap_or(false) {
-            let loc_type_opt = self
-                .web_search_user_location_type
-                .as_ref()
-                .filter(|t| matches!(t.as_str(), "exact" | "approximate"));
-
-            let country = self.web_search_user_location_approximate_country.as_ref();
-            let city = self.web_search_user_location_approximate_city.as_ref();
-            let region = self.web_search_user_location_approximate_region.as_ref();
-
-            let approximate = if [country, city, region].iter().any(|v| v.is_some()) {
-                Some(ApproximateLocation {
-                    country: country.cloned().unwrap_or_default(),
-                    city: city.cloned().unwrap_or_default(),
-                    region: region.cloned().unwrap_or_default(),
-                })
-            } else {
-                None
-            };
-
-            let user_location = loc_type_opt.map(|loc_type| UserLocation {
-                location_type: loc_type.clone(),
-                approximate,
-            });
-
-            Some(OpenAIWebSearchOptions {
-                search_context_size: self.web_search_context_size.clone(),
-                user_location,
-            })
-        } else {
-            None
-        };
-
-        let body = OpenAIChatRequest {
+        let body = CohereChatRequest {
             model: &self.model,
-            messages: openai_msgs,
+            messages: cohere_msgs,
             max_tokens: self.max_tokens,
             temperature: self.temperature,
             stream: self.stream.unwrap_or(false),
@@ -515,7 +435,6 @@ impl ChatProvider for OpenAI {
             tool_choice: request_tool_choice,
             reasoning_effort: self.reasoning_effort.clone(),
             response_format,
-            web_search_options,
         };
 
         let url = self
@@ -527,7 +446,7 @@ impl ChatProvider for OpenAI {
 
         if log::log_enabled!(log::Level::Trace) {
             if let Ok(json) = serde_json::to_string(&body) {
-                log::trace!("OpenAI request payload: {}", json);
+                log::trace!("Cohere request payload: {}", json);
             }
         }
 
@@ -537,7 +456,7 @@ impl ChatProvider for OpenAI {
 
         let response = request.send().await?;
 
-        log::debug!("OpenAI HTTP status: {}", response.status());
+        log::debug!("Cohere HTTP status: {}", response.status());
 
         if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
             let raw_response = response.text().await?;
@@ -548,20 +467,20 @@ impl ChatProvider for OpenAI {
             let status = response.status();
             let error_text = response.text().await?;
             return Err(LLMError::ResponseFormatError {
-                message: format!("OpenAI API returned error status: {}", status),
+                message: format!("Cohere API returned error status: {}", status),
                 raw_response: error_text,
             });
         }
 
         // Parse the successful response
         let resp_text = response.text().await?;
-        let json_resp: Result<OpenAIChatResponse, serde_json::Error> =
+        let json_resp: Result<CohereChatResponse, serde_json::Error> =
             serde_json::from_str(&resp_text);
 
         match json_resp {
             Ok(response) => Ok(Box::new(response)),
             Err(e) => Err(LLMError::ResponseFormatError {
-                message: format!("Failed to decode OpenAI API response: {}", e),
+                message: format!("Failed to decode Cohere API response: {}", e),
                 raw_response: resp_text,
             }),
         }
@@ -571,14 +490,14 @@ impl ChatProvider for OpenAI {
         self.chat_with_tools(messages, None).await
     }
 
-    /// Sends a streaming chat request to OpenAI's API.
-    ///
+    /// Sends a streaming chat request to Cohere's API.
+    /// 
     /// # Arguments
-    ///
+    /// 
     /// * `messages` - Slice of chat messages representing the conversation
-    ///
+    /// 
     /// # Returns
-    ///
+    /// 
     /// A stream of text tokens or an error
     async fn chat_stream(
         &self,
@@ -586,16 +505,16 @@ impl ChatProvider for OpenAI {
     ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError>
     {
         if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing OpenAI API key".to_string()));
+            return Err(LLMError::AuthError("Missing Cohere API key".to_string()));
         }
 
         let messages = messages.to_vec();
-        let mut openai_msgs: Vec<OpenAIChatMessage> = vec![];
+        let mut cohere_msgs: Vec<CohereChatMessage> = vec![];
 
         for msg in messages {
             if let MessageType::ToolResult(ref results) = msg.message_type {
                 for result in results {
-                    openai_msgs.push(OpenAIChatMessage {
+                    cohere_msgs.push(CohereChatMessage {
                         role: "tool",
                         tool_call_id: Some(result.id.clone()),
                         tool_calls: None,
@@ -603,15 +522,15 @@ impl ChatProvider for OpenAI {
                     });
                 }
             } else {
-                openai_msgs.push(chat_message_to_api_message(msg))
+                cohere_msgs.push(chat_message_to_api_message(msg))
             }
         }
 
         if let Some(system) = &self.system {
-            openai_msgs.insert(
+            cohere_msgs.insert(
                 0,
-                OpenAIChatMessage {
-                    role: "system",
+                CohereChatMessage {
+                    role: "developer",
                     content: Some(Left(vec![MessageContent {
                         message_type: Some("text"),
                         text: Some(system),
@@ -625,9 +544,9 @@ impl ChatProvider for OpenAI {
             );
         }
 
-        let body = OpenAIChatRequest {
+        let body = CohereChatRequest {
             model: &self.model,
-            messages: openai_msgs,
+            messages: cohere_msgs,
             max_tokens: self.max_tokens,
             temperature: self.temperature,
             stream: true,
@@ -637,7 +556,6 @@ impl ChatProvider for OpenAI {
             tool_choice: self.tool_choice.clone(),
             reasoning_effort: self.reasoning_effort.clone(),
             response_format: None,
-            web_search_options: None,
         };
 
         let url = self
@@ -657,7 +575,7 @@ impl ChatProvider for OpenAI {
             let status = response.status();
             let error_text = response.text().await?;
             return Err(LLMError::ResponseFormatError {
-                message: format!("OpenAI API returned error status: {}", status),
+                message: format!("Cohere API returned error status: {}", status),
                 raw_response: error_text,
             });
         }
@@ -666,10 +584,10 @@ impl ChatProvider for OpenAI {
     }
 }
 
-// Create an owned OpenAIChatMessage that doesn't borrow from any temporary variables
-fn chat_message_to_api_message(chat_msg: ChatMessage) -> OpenAIChatMessage<'static> {
-    // For other message types, create an owned OpenAIChatMessage
-    OpenAIChatMessage {
+// Create an owned CohereChatMessage that doesn't borrow from any temporary variables
+fn chat_message_to_api_message(chat_msg: ChatMessage) -> CohereChatMessage<'static> {
+    // For other message types, create an owned CohereChatMessage
+    CohereChatMessage {
         role: match chat_msg.role {
             ChatRole::User => "user",
             ChatRole::Assistant => "assistant",
@@ -698,7 +616,7 @@ fn chat_message_to_api_message(chat_msg: ChatMessage) -> OpenAIChatMessage<'stat
         },
         tool_calls: match &chat_msg.message_type {
             MessageType::ToolUse(calls) => {
-                let owned_calls: Vec<OpenAIFunctionCall<'static>> = calls
+                let owned_calls: Vec<CohereFunctionCall<'static>> = calls
                     .iter()
                     .map(|c| {
                         let owned_id = c.id.clone();
@@ -712,10 +630,10 @@ fn chat_message_to_api_message(chat_msg: ChatMessage) -> OpenAIChatMessage<'stat
                         let name_str = Box::leak(owned_name.into_boxed_str());
                         let args_str = Box::leak(owned_args.into_boxed_str());
 
-                        OpenAIFunctionCall {
+                        CohereFunctionCall {
                             id: id_str,
                             content_type: "function",
-                            function: OpenAIFunctionPayload {
+                            function: CohereFunctionPayload {
                                 name: name_str,
                                 arguments: args_str,
                             },
@@ -730,103 +648,31 @@ fn chat_message_to_api_message(chat_msg: ChatMessage) -> OpenAIChatMessage<'stat
 }
 
 #[async_trait]
-impl CompletionProvider for OpenAI {
-    /// Sends a completion request to OpenAI's API.
-    ///
+impl CompletionProvider for Cohere {
+    /// Sends a completion request to Cohere's API.
+    /// 
     /// Currently not implemented.
     async fn complete(&self, _req: &CompletionRequest) -> Result<CompletionResponse, LLMError> {
         Ok(CompletionResponse {
-            text: "OpenAI completion not implemented.".into(),
+            text: "Cohere completion not implemented.".into(),
         })
     }
 }
 
 #[async_trait]
-impl SpeechToTextProvider for OpenAI {
-    /// Transcribes audio data to text using OpenAI API
-    ///
-    /// # Arguments
-    ///
-    /// * `audio` - Raw audio data as bytes
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(String)` - Transcribed text
-    /// * `Err(LLMError)` - Error if transcription fails
-    async fn transcribe(&self, audio: Vec<u8>) -> Result<String, LLMError> {
-        let url = self
-            .base_url
-            .join("audio/transcriptions")
-            .map_err(|e| LLMError::HttpError(e.to_string()))?;
-
-        let part = reqwest::multipart::Part::bytes(audio).file_name("audio.m4a");
-        let form = reqwest::multipart::Form::new()
-            .text("model", self.model.clone())
-            .text("response_format", "text")
-            .part("file", part);
-
-        let mut req = self
-            .client
-            .post(url)
-            .bearer_auth(&self.api_key)
-            .multipart(form);
-
-        if let Some(t) = self.timeout_seconds {
-            req = req.timeout(Duration::from_secs(t));
-        }
-
-        let resp = req.send().await?;
-        let text = resp.text().await?;
-        let raw = text.clone();
-        Ok(raw)
-    }
-
-    /// Transcribes audio file to text using OpenAI API
-    ///
-    /// # Arguments
-    ///
-    /// * `file_path` - Path to the audio file
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(String)` - Transcribed text
-    /// * `Err(LLMError)` - Error if transcription fails
-    async fn transcribe_file(&self, file_path: &str) -> Result<String, LLMError> {
-        let url = self
-            .base_url
-            .join("audio/transcriptions")
-            .map_err(|e| LLMError::HttpError(e.to_string()))?;
-
-        let form = reqwest::multipart::Form::new()
-            .text("model", self.model.clone())
-            .text("response_format", "text")
-            .file("file", file_path)
-            .await
-            .map_err(|e| LLMError::HttpError(e.to_string()))?;
-
-        let mut req = self
-            .client
-            .post(url)
-            .bearer_auth(&self.api_key)
-            .multipart(form);
-
-        if let Some(t) = self.timeout_seconds {
-            req = req.timeout(Duration::from_secs(t));
-        }
-
-        let resp = req.send().await?;
-        let text = resp.text().await?;
-        let raw = text.clone();
-        Ok(raw)
+impl SpeechToTextProvider for Cohere {
+    async fn transcribe(&self, _audio: Vec<u8>) -> Result<String, LLMError> {
+        Err(LLMError::ProviderError(
+            "Cohere does not implement speech to text endpoint yet.".into(),
+        ))
     }
 }
 
-#[cfg(feature = "openai")]
 #[async_trait]
-impl EmbeddingProvider for OpenAI {
+impl EmbeddingProvider for Cohere {
     async fn embed(&self, input: Vec<String>) -> Result<Vec<Vec<f32>>, LLMError> {
         if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing OpenAI API key".into()));
+            return Err(LLMError::AuthError("Missing Cohere API key".into()));
         }
 
         let emb_format = self
@@ -834,7 +680,7 @@ impl EmbeddingProvider for OpenAI {
             .clone()
             .unwrap_or_else(|| "float".to_string());
 
-        let body = OpenAIEmbeddingRequest {
+        let body = CohereEmbeddingRequest {
             model: self.model.clone(),
             input,
             encoding_format: Some(emb_format),
@@ -855,7 +701,7 @@ impl EmbeddingProvider for OpenAI {
             .await?
             .error_for_status()?;
 
-        let json_resp: OpenAIEmbeddingResponse = resp.json().await?;
+        let json_resp: CohereEmbeddingResponse = resp.json().await?;
 
         let embeddings = json_resp.data.into_iter().map(|d| d.embedding).collect();
         Ok(embeddings)
@@ -863,14 +709,14 @@ impl EmbeddingProvider for OpenAI {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct OpenAIModelEntry {
+pub struct CohereModelEntry {
     pub id: String,
     pub created: Option<u64>,
     #[serde(flatten)]
     pub extra: Value,
 }
 
-impl ModelListRawEntry for OpenAIModelEntry {
+impl ModelListRawEntry for CohereModelEntry {
     fn get_id(&self) -> String {
         self.id.clone()
     }
@@ -887,11 +733,11 @@ impl ModelListRawEntry for OpenAIModelEntry {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct OpenAIModelListResponse {
-    pub data: Vec<OpenAIModelEntry>,
+pub struct CohereModelListResponse {
+    pub data: Vec<CohereModelEntry>,
 }
 
-impl ModelListResponse for OpenAIModelListResponse {
+impl ModelListResponse for CohereModelListResponse {
     fn get_models(&self) -> Vec<String> {
         self.data.iter().map(|e| e.id.clone()).collect()
     }
@@ -904,12 +750,12 @@ impl ModelListResponse for OpenAIModelListResponse {
     }
 
     fn get_backend(&self) -> LLMBackend {
-        LLMBackend::OpenAI
+        LLMBackend::Cohere
     }
 }
 
 #[async_trait]
-impl ModelsProvider for OpenAI {
+impl ModelsProvider for Cohere {
     async fn list_models(
         &self,
         _request: Option<&ModelListRequest>,
@@ -927,79 +773,35 @@ impl ModelsProvider for OpenAI {
             .await?
             .error_for_status()?;
 
-        let result = resp.json::<OpenAIModelListResponse>().await?;
+        let result = resp.json::<CohereModelListResponse>().await?;
 
         Ok(Box::new(result))
     }
 }
 
-impl LLMProvider for OpenAI {
+impl LLMProvider for Cohere {
     fn tools(&self) -> Option<&[Tool]> {
         self.tools.as_deref()
     }
 }
 
 #[async_trait]
-impl TextToSpeechProvider for OpenAI {
-    /// Converts text to speech using OpenAI's TTS API
-    ///
-    /// # Arguments
-    /// * `text` - The text to convert to speech
-    ///
-    /// # Returns
-    /// * `Result<Vec<u8>, LLMError>` - Audio data as bytes or error
-    async fn speech(&self, text: &str) -> Result<Vec<u8>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing OpenAI API key".into()));
-        }
-
-        let url = self
-            .base_url
-            .join("audio/speech")
-            .map_err(|e| LLMError::HttpError(e.to_string()))?;
-
-        #[derive(Serialize)]
-        struct SpeechRequest {
-            model: String,
-            input: String,
-            voice: String,
-        }
-
-        let body = SpeechRequest {
-            model: self.model.clone(),
-            input: text.to_string(),
-            voice: self.voice.clone().unwrap_or("alloy".to_string()),
-        };
-
-        let mut req = self.client.post(url).bearer_auth(&self.api_key).json(&body);
-
-        if let Some(t) = self.timeout_seconds {
-            req = req.timeout(Duration::from_secs(t));
-        }
-
-        let resp = req.send().await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let error_text = resp.text().await?;
-            return Err(LLMError::ResponseFormatError {
-                message: format!("OpenAI API returned error status: {}", status),
-                raw_response: error_text,
-            });
-        }
-
-        Ok(resp.bytes().await?.to_vec())
+impl TextToSpeechProvider for Cohere {
+    async fn speech(&self, _text: &str) -> Result<Vec<u8>, LLMError> {
+        Err(LLMError::ProviderError(
+            "Cohere does not implement text to speech endpoint yet.".into(),
+        ))
     }
 }
 
-/// Parses a Server-Sent Events (SSE) chunk from OpenAI's streaming API.
-///
+/// Parses a Server-Sent Events (SSE) chunk from Cohere's streaming API.
+/// 
 /// # Arguments
-///
+/// 
 /// * `chunk` - The raw SSE chunk text
-///
+/// 
 /// # Returns
-///
+/// 
 /// * `Ok(Some(String))` - Content token if found
 /// * `Ok(None)` - If chunk should be skipped (e.g., ping, done signal)
 /// * `Err(LLMError)` - If parsing fails
@@ -1018,7 +820,7 @@ fn parse_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
                 }
             }
 
-            match serde_json::from_str::<OpenAIChatStreamResponse>(data) {
+            match serde_json::from_str::<CohereChatStreamResponse>(data) {
                 Ok(response) => {
                     if let Some(choice) = response.choices.first() {
                         if let Some(content) = &choice.delta.content {

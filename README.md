@@ -4,6 +4,7 @@
 - made `name: String` in `FunctionBuilder` public, so all available tool names can be retrieved
 - added total used tokens to `google.rs` backend
 - added `TooManyRequests(String)` to `pub enum LLMError` for all backends
+- add Cohere backend
 
 # LLM
 

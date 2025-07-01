@@ -27,3 +27,6 @@ pub mod azure_openai;
 
 #[cfg(feature = "elevenlabs")]
 pub mod elevenlabs;
+
+#[cfg(feature = "cohere")]
+pub mod cohere;

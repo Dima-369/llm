@@ -159,6 +159,10 @@ fn get_api_key(backend: &LLMBackend, args: &CliArgs) -> Option<String> {
             LLMBackend::Ollama => None,
             LLMBackend::Phind => None,
             LLMBackend::ElevenLabs => None,
+            LLMBackend::Cohere => store
+                .get("COHERE_API_KEY")
+                .cloned()
+                .or_else(|| std::env::var("COHERE_API_KEY").ok()),
         }
     })
 }

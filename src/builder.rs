@@ -43,6 +43,8 @@ pub enum LLMBackend {
     AzureOpenAI,
     /// ElevenLabs API provider
     ElevenLabs,
+    /// Cohere API provider
+    Cohere,
 }
 
 /// Implements string parsing for LLMBackend enum.
@@ -86,6 +88,7 @@ impl std::str::FromStr for LLMBackend {
             "groq" => Ok(LLMBackend::Groq),
             "azure-openai" => Ok(LLMBackend::AzureOpenAI),
             "elevenlabs" => Ok(LLMBackend::ElevenLabs),
+            "cohere" => Ok(LLMBackend::Cohere),
             _ => Err(LLMError::InvalidRequest(format!(
                 "Unknown LLM backend: {s}"
             ))),
@@ -847,7 +850,7 @@ impl LLMBuilder {
             LLMBackend::AzureOpenAI => {
                 #[cfg(not(feature = "azure_openai"))]
                 return Err(LLMError::InvalidRequest(
-                    "OpenAI feature not enabled".to_string(),
+                    "Azure OpenAI feature not enabled".to_string(),
                 ));
 
                 #[cfg(feature = "azure_openai")]
@@ -878,6 +881,38 @@ impl LLMBuilder {
                         api_version,
                         deployment,
                         endpoint,
+                        self.model,
+                        self.max_tokens,
+                        self.temperature,
+                        self.timeout_seconds,
+                        self.system,
+                        self.stream,
+                        self.top_p,
+                        self.top_k,
+                        self.embedding_encoding_format,
+                        self.embedding_dimensions,
+                        tools,
+                        tool_choice,
+                        self.reasoning_effort,
+                        self.json_schema,
+                    ))
+                }
+            }
+            LLMBackend::Cohere => {
+                #[cfg(not(feature = "cohere"))]
+                return Err(LLMError::InvalidRequest(
+                    "Cohere feature not enabled".to_string(),
+                ));
+
+                #[cfg(feature = "cohere")]
+                {
+                    let key = self.api_key.ok_or_else(|| {
+                        LLMError::InvalidRequest("No API key provided for Cohere".to_string())
+                    })?;
+                    Box::new(crate::backends::cohere::Cohere::new(
+                        key,
+                        self.proxy_url,
+                        self.base_url,
                         self.model,
                         self.max_tokens,
                         self.temperature,
