@@ -1,9 +1,9 @@
 # Patches
 
-- added `proxy_url` to the builder and to the `google.rs` backend
+- added `proxy_url` to the builder and all backends
 - made `name: String` in `FunctionBuilder` public, so all available tool names can be retrieved
 - added total used tokens to `google.rs` backend
-- added `TooManyRequests(String)` to `pub enum LLMError`
+- added `TooManyRequests(String)` to `pub enum LLMError` for all backends
 
 # LLM
 
