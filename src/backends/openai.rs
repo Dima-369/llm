@@ -18,7 +18,7 @@ use crate::{
     LLMProvider,
 };
 use crate::{
-    chat::{ChatResponse, ToolChoice},
+    chat::{ChatResponse, ToolChoice, Usage},
     ToolCall,
 };
 use async_trait::async_trait;
@@ -153,6 +153,8 @@ struct OpenAIChatRequest<'a> {
 #[derive(Deserialize, Debug)]
 struct OpenAIChatResponse {
     choices: Vec<OpenAIChatChoice>,
+    #[serde(default)]
+    usage: Usage,
 }
 
 /// Individual choice within an OpenAI chat API response.
@@ -280,10 +282,14 @@ impl ChatResponse for OpenAIChatResponse {
         self.choices.first().and_then(|c| c.message.content.clone())
     }
 
-    fn tool_calls(&self) -> Option<Vec<ToolCall>> {
+        fn tool_calls(&self) -> Option<Vec<ToolCall>> {
         self.choices
             .first()
             .and_then(|c| c.message.tool_calls.clone())
+    }
+
+    fn usage(&self) -> Option<Usage> {
+        Some(self.usage.clone())
     }
 }
 
