@@ -94,6 +94,11 @@ pub trait LLMProvider:
     }
 }
 
+/// Helper function to provide a default value for `call_type`.
+fn default_function_type() -> String {
+    "function".to_string()
+}
+
 /// Tool call represents a function call that an LLM wants to make.
 /// This is a standardized structure used across all providers.
 #[derive(Debug, Deserialize, Serialize, Clone, Eq, PartialEq)]
@@ -101,7 +106,7 @@ pub struct ToolCall {
     /// The ID of the tool call.
     pub id: String,
     /// The type of the tool call (usually "function").
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default = "default_function_type")]
     pub call_type: String,
     /// The function to call.
     pub function: FunctionCall,
