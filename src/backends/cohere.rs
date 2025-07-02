@@ -7,7 +7,7 @@
 use crate::{
     builder::LLMBackend,
     chat::Tool,
-    chat::{ChatMessage, ChatProvider, ChatRole, MessageType, StructuredOutputFormat},
+    chat::{ChatMessage, ChatProvider, ChatRole, MessageType, StructuredOutputFormat, Usage},
     completion::{CompletionProvider, CompletionRequest, CompletionResponse},
     embedding::EmbeddingProvider,
     error::LLMError,
@@ -139,10 +139,21 @@ struct CohereChatRequest<'a> {
 
 
 
+/// Only the total tokens are parsed, even though the API also returns promptTokenCount and candidatesTokenCount.
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct CohereUsage {
+    prompt_tokens: u32,
+    completion_tokens: u32,
+    total_tokens: u32,
+}
+
 /// Response from Cohere's chat API endpoint.
 #[derive(Deserialize, Debug)]
 struct CohereChatResponse {
     choices: Vec<CohereChatChoice>,
+    #[serde(rename = "usage", default)]
+    usage_metadata: CohereUsage,
 }
 
 /// Individual choice within an Cohere chat API response.
@@ -251,6 +262,12 @@ impl ChatResponse for CohereChatResponse {
         self.choices
             .first()
             .and_then(|c| c.message.tool_calls.clone())
+    }
+
+    fn usage(&self) -> Option<Usage> {
+        Some(Usage {
+            total_tokens: self.usage_metadata.total_tokens,
+        })
     }
 }
 
