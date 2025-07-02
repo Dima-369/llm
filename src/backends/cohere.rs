@@ -139,9 +139,8 @@ struct CohereChatRequest<'a> {
 
 
 
-/// Only the total tokens are parsed, even though the API also returns promptTokenCount and candidatesTokenCount.
+/// Only the total tokens are parsed, even though the API also returns prompt_tokens and completion_tokens.
 #[derive(Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
 struct CohereUsage {
     total_tokens: u32,
 }
