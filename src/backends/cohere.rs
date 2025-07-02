@@ -143,8 +143,6 @@ struct CohereChatRequest<'a> {
 #[derive(Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 struct CohereUsage {
-    prompt_tokens: u32,
-    completion_tokens: u32,
     total_tokens: u32,
 }
 
