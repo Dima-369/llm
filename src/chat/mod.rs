@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::{error::LLMError, ToolCall};
 
 /// Role of a participant in a chat conversation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChatRole {
     /// The user/human participant in the conversation
     User,
@@ -18,7 +18,7 @@ pub enum ChatRole {
 }
 
 /// The supported MIME type of an image.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ImageMime {
     /// JPEG image
@@ -43,7 +43,7 @@ impl ImageMime {
 }
 
 /// The type of a message in a chat conversation.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum MessageType {
     /// A text message
     #[default]
@@ -71,7 +71,7 @@ pub enum ReasoningEffort {
 }
 
 /// A single message in a chat conversation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     /// The role of who sent this message (user or assistant)
     pub role: ChatRole,
@@ -452,4 +452,191 @@ where
         });
 
     Box::pin(stream)
+}
+
+// Helper module for base64 encoding/decoding for serde
+mod base64_helpers {
+    use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = BASE64_STANDARD.encode(bytes);
+        serializer.serialize_str(&s)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        BASE64_STANDARD.decode(s).map_err(serde::de::Error::custom)
+    }
+}
+
+/// A version of MessageType designed for clean serialization.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum SerializableMessageExtra {
+    Image {
+        mime: ImageMime,
+        #[serde(with = "base64_helpers")]
+        bytes: Vec<u8>,
+    },
+    Pdf {
+        #[serde(with = "base64_helpers")]
+        bytes: Vec<u8>,
+    },
+    ImageUrl {
+        url: String,
+    },
+    ToolUse {
+        calls: Vec<ToolCall>,
+    },
+    ToolResult {
+        results: Vec<ToolCall>,
+    },
+}
+
+/// A version of ChatMessage designed for clean serialization.
+#[derive(Serialize, Deserialize, Debug)]
+struct SerializableChatMessage {
+    role: ChatRole,
+    content: String,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    extra: Option<SerializableMessageExtra>,
+}
+
+impl From<ChatMessage> for SerializableChatMessage {
+    fn from(msg: ChatMessage) -> Self {
+        let extra = match msg.message_type {
+            MessageType::Text => None,
+            MessageType::Image((mime, bytes)) => Some(SerializableMessageExtra::Image { mime, bytes }),
+            MessageType::Pdf(bytes) => Some(SerializableMessageExtra::Pdf { bytes }),
+            MessageType::ImageURL(url) => Some(SerializableMessageExtra::ImageUrl { url }),
+            MessageType::ToolUse(calls) => Some(SerializableMessageExtra::ToolUse { calls }),
+            MessageType::ToolResult(results) => Some(SerializableMessageExtra::ToolResult { results }),
+        };
+
+        SerializableChatMessage {
+            role: msg.role,
+            content: msg.content,
+            extra,
+        }
+    }
+}
+
+impl From<SerializableChatMessage> for ChatMessage {
+    fn from(s_msg: SerializableChatMessage) -> Self {
+        let message_type = match s_msg.extra {
+            None => MessageType::Text,
+            Some(SerializableMessageExtra::Image { mime, bytes }) => MessageType::Image((mime, bytes)),
+            Some(SerializableMessageExtra::Pdf { bytes }) => MessageType::Pdf(bytes),
+            Some(SerializableMessageExtra::ImageUrl { url }) => MessageType::ImageURL(url),
+            Some(SerializableMessageExtra::ToolUse { calls }) => MessageType::ToolUse(calls),
+            Some(SerializableMessageExtra::ToolResult { results }) => MessageType::ToolResult(results),
+        };
+
+        ChatMessage {
+            role: s_msg.role,
+            content: s_msg.content,
+            message_type,
+        }
+    }
+}
+
+/// Serializes a vector of ChatMessages to a JSON string.
+///
+/// This function converts the internal `ChatMessage` representation into a
+/// serializable format, including base64-encoding for binary data,
+/// and returns it as a JSON string.
+///
+/// # Example
+/// ```
+/// # use llm::chat::{serialize_messages, ChatMessage, ChatRole, MessageType};
+/// let messages = vec![ChatMessage::user().content("Hello, world!").build()];
+/// let json_string = serialize_messages(&messages).unwrap();
+/// assert_eq!(json_string, r#"[{"role":"User","content":"Hello, world!"}]"#);
+/// ```
+pub fn serialize_messages(messages: &[ChatMessage]) -> Result<String, serde_json::Error> {
+    let serializable_msgs: Vec<SerializableChatMessage> =
+        messages.iter().cloned().map(Into::into).collect();
+    serde_json::to_string_pretty(&serializable_msgs)
+}
+
+/// Deserializes a JSON string into a vector of ChatMessages.
+///
+/// This function parses a JSON string, expecting it to match the format
+/// produced by `serialize_messages`, and converts it back into the
+/// library's internal `ChatMessage` representation.
+pub fn deserialize_messages(json_str: &str) -> Result<Vec<ChatMessage>, serde_json::Error> {
+    let serializable_msgs: Vec<SerializableChatMessage> = serde_json::from_str(json_str)?;
+    let messages: Vec<ChatMessage> = serializable_msgs.into_iter().map(Into::into).collect();
+    Ok(messages)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{FunctionCall, ToolCall};
+
+    #[test]
+    fn test_chat_message_serialization_and_deserialization() {
+        let messages = vec![
+            ChatMessage::user().content("Hello!").build(),
+            ChatMessage::assistant()
+                .content("I have a function call for you.")
+                .tool_use(vec![ToolCall {
+                    id: "call_123".to_string(),
+                    call_type: "function".to_string(),
+                    function: FunctionCall {
+                        name: "get_weather".to_string(),
+                        arguments: r#"{"location": "Tokyo"}"#.to_string(),
+                    },
+                }])
+                .build(),
+            ChatMessage::user()
+                .content("Here is a picture of my cat.")
+                .image(ImageMime::JPEG, vec![255, 216, 255, 224]) // Fake JPEG header
+                .build(),
+        ];
+
+        // Serialize
+        let json_string = serialize_messages(&messages).unwrap();
+        println!("Serialized JSON:\n{}", json_string);
+
+        // Deserialize
+        let deserialized_messages = deserialize_messages(&json_string).unwrap();
+
+        // Verify
+        assert_eq!(messages.len(), deserialized_messages.len());
+        
+        // Message 1: Simple text
+        assert_eq!(messages[0].role, deserialized_messages[0].role);
+        assert_eq!(messages[0].content, deserialized_messages[0].content);
+        assert_eq!(messages[0].message_type, deserialized_messages[0].message_type);
+
+        // Message 2: Tool Use
+        assert_eq!(messages[1].role, deserialized_messages[1].role);
+        assert_eq!(messages[1].content, deserialized_messages[1].content);
+        assert_eq!(messages[1].message_type, deserialized_messages[1].message_type);
+        if let MessageType::ToolUse(calls) = &deserialized_messages[1].message_type {
+            assert_eq!(calls[0].function.name, "get_weather");
+        } else {
+            panic!("Expected ToolUse message type");
+        }
+
+        // Message 3: Image
+        assert_eq!(messages[2].role, deserialized_messages[2].role);
+        assert_eq!(messages[2].content, deserialized_messages[2].content);
+        assert_eq!(messages[2].message_type, deserialized_messages[2].message_type);
+        if let MessageType::Image((mime, bytes)) = &deserialized_messages[2].message_type {
+            assert_eq!(*mime, ImageMime::JPEG);
+            assert_eq!(*bytes, vec![255, 216, 255, 224]);
+        } else {
+            panic!("Expected Image message type");
+        }
+    }
 }
