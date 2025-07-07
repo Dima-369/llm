@@ -32,21 +32,6 @@ const GITHUB_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
 const EDITOR_VERSION: &str = "vscode/1.85.1";
 const EDITOR_PLUGIN_VERSION: &str = "copilot-chat/0.11.1";
 
-fn llm_dir() -> Result<PathBuf, LLMError> {
-    let home_dir = dirs::home_dir().ok_or_else(|| LLMError::Generic("Could not find home directory".into()))?;
-    let llm_dir = home_dir.join(".llm");
-    fs::create_dir_all(&llm_dir).map_err(|e| LLMError::Generic(format!("Failed to create .llm dir: {}", e)))?;
-    Ok(llm_dir)
-}
-
-fn github_token_file() -> Result<PathBuf, LLMError> {
-    Ok(llm_dir()?.join("copilot_github_token.json"))
-}
-
-fn copilot_token_file() -> Result<PathBuf, LLMError> {
-    Ok(llm_dir()?.join("copilot_token.json"))
-}
-
 // --- API Structs ---
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -121,9 +106,23 @@ pub struct Copilot {
     temperature: Option<f32>,
     tools: Option<Vec<Tool>>,
     tool_choice: Option<ToolChoice>,
+    token_directory: PathBuf,
 }
 
 impl Copilot {
+    fn llm_dir(&self) -> Result<PathBuf, LLMError> {
+        fs::create_dir_all(&self.token_directory).map_err(|e| LLMError::Generic(format!("Failed to create token directory: {}", e)))?;
+        Ok(self.token_directory.clone())
+    }
+
+    fn github_token_file(&self) -> Result<PathBuf, LLMError> {
+        Ok(self.llm_dir()?.join("copilot_github_token.json"))
+    }
+
+    fn copilot_token_file(&self) -> Result<PathBuf, LLMError> {
+        Ok(self.llm_dir()?.join("copilot_token.json"))
+    }
+
     /// Creates a new Copilot client.
     /// If a GitHub token is not provided, it will attempt to load one from the cache,
     /// or initiate an interactive device authentication flow.
@@ -135,6 +134,7 @@ impl Copilot {
         timeout_seconds: Option<u64>,
         tools: Option<Vec<Tool>>,
         tool_choice: Option<ToolChoice>,
+        token_directory: PathBuf,
     ) -> Result<Self, LLMError> {
         let mut builder = Client::builder();
         if let Some(sec) = timeout_seconds {
@@ -146,6 +146,17 @@ impl Copilot {
         }
         let client = builder.build().map_err(|e| LLMError::HttpError(e.to_string()))?;
 
+        let dummy_copilot = Self {
+            client: client.clone(),
+            github_token: String::new(), // Placeholder
+            copilot_token: Arc::new(RwLock::new(None)), // Placeholder
+            model: String::new(), // Placeholder
+            temperature: None, // Placeholder
+            tools: None, // Placeholder
+            tool_choice: None, // Placeholder
+            token_directory: token_directory.clone(),
+        };
+
         let final_github_token = match github_token {
             Some(token) => {
                 log::debug!("Using provided GitHub token.");
@@ -153,7 +164,7 @@ impl Copilot {
             }
             None => {
                 log::debug!("No GitHub token provided, checking cache.");
-                match Self::load_github_token() {
+                match dummy_copilot.load_github_token() {
                     Ok(token) => {
                         log::debug!("Loaded GitHub token from cache.");
                         token
@@ -162,7 +173,7 @@ impl Copilot {
                         log::info!("No cached GitHub token. Starting interactive authentication.");
                         tokio::task::block_in_place(|| {
                             tokio::runtime::Handle::current().block_on(
-                                Self::interactive_github_auth(&client)
+                                dummy_copilot.interactive_github_auth(&client)
                             )
                         })?
                     }
@@ -170,7 +181,7 @@ impl Copilot {
             }
         };
 
-        let cached_copilot_token = Self::load_copilot_token().ok();
+        let cached_copilot_token = dummy_copilot.load_copilot_token().ok();
 
         Ok(Self {
             client,
@@ -180,11 +191,12 @@ impl Copilot {
             temperature,
             tools,
             tool_choice,
+            token_directory,
         })
     }
 
     /// Handles the interactive device flow to get a GitHub token.
-    async fn interactive_github_auth(client: &Client) -> Result<String, LLMError> {
+    async fn interactive_github_auth(&self, client: &Client) -> Result<String, LLMError> {
         let device_code_response = client
             .post("https://github.com/login/device/code")
             .header("Accept", "application/json")
@@ -225,7 +237,7 @@ impl Copilot {
                 if let Ok(token_res) = serde_json::from_str::<GithubTokenResponse>(&response_text) {
                     if !token_res.access_token.is_empty() {
                         println!("Successfully authenticated with GitHub.");
-                        Self::save_github_token(&token_res.access_token)?;
+                        self.save_github_token(&token_res.access_token)?;
                         return Ok(token_res.access_token);
                     }
                 }
@@ -258,7 +270,7 @@ impl Copilot {
             let new_token = self.fetch_copilot_token_from_api().await?;
             let mut write_lock = self.copilot_token.write().unwrap();
             *write_lock = Some(new_token.clone());
-            Self::save_copilot_token(&new_token)?;
+            self.save_copilot_token(&new_token)?;
             Ok(new_token)
         } else {
             log::debug!("Using cached Copilot token.");
@@ -292,23 +304,23 @@ impl Copilot {
     }
 
     // --- Token Caching ---
-    fn load_github_token() -> Result<String, LLMError> {
-        let content = fs::read_to_string(github_token_file()?).map_err(|e| LLMError::Generic(e.to_string()))?;
+    fn load_github_token(&self) -> Result<String, LLMError> {
+        let content = fs::read_to_string(self.github_token_file()?).map_err(|e| LLMError::Generic(e.to_string()))?;
         Ok(content)
     }
 
-    fn save_github_token(token: &str) -> Result<(), LLMError> {
-        fs::write(github_token_file()?, token).map_err(|e| LLMError::Generic(e.to_string()))
+    fn save_github_token(&self, token: &str) -> Result<(), LLMError> {
+        fs::write(self.github_token_file()?, token).map_err(|e| LLMError::Generic(e.to_string()))
     }
     
-    fn load_copilot_token() -> Result<CopilotToken, LLMError> {
-        let content = fs::read_to_string(copilot_token_file()?).map_err(|e| LLMError::Generic(e.to_string()))?;
+    fn load_copilot_token(&self) -> Result<CopilotToken, LLMError> {
+        let content = fs::read_to_string(self.copilot_token_file()?).map_err(|e| LLMError::Generic(e.to_string()))?;
         serde_json::from_str(&content).map_err(|e| LLMError::JsonError(e.to_string()))
     }
 
-    fn save_copilot_token(token: &CopilotToken) -> Result<(), LLMError> {
+    fn save_copilot_token(&self, token: &CopilotToken) -> Result<(), LLMError> {
         let content = serde_json::to_string(token).map_err(|e| LLMError::JsonError(e.to_string()))?;
-        fs::write(copilot_token_file()?, content).map_err(|e| LLMError::Generic(e.to_string()))
+        fs::write(self.copilot_token_file()?, content).map_err(|e| LLMError::Generic(e.to_string()))
     }
 }
 

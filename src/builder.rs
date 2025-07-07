@@ -183,6 +183,8 @@ pub struct LLMBuilder {
     openai_web_search_user_location_approximate_city: Option<String>,
     /// OpenAI web search user location approximate region
     openai_web_search_user_location_approximate_region: Option<String>,
+    /// GitHub Copilot token directory
+    github_copilot_token_directory: Option<String>,
 }
 
 impl LLMBuilder {
@@ -408,6 +410,12 @@ impl LLMBuilder {
     /// Set the web search user location approximate region
     pub fn openai_web_search_user_location_approximate_region(mut self, region: impl Into<String>) -> Self {
         self.openai_web_search_user_location_approximate_region = Some(region.into());
+        self
+    }
+
+    /// Sets the GitHub Copilot token directory.
+    pub fn github_copilot_token_directory(mut self, path: impl Into<String>) -> Self {
+        self.github_copilot_token_directory = Some(path.into());
         self
     }
     
@@ -941,6 +949,9 @@ impl LLMBuilder {
 
                 #[cfg(feature = "copilot")]
                 {
+                    let token_directory = self.github_copilot_token_directory.ok_or_else(|| {
+                        LLMError::InvalidRequest("No GitHub Copilot token directory provided".to_string())
+                    })?;
                     Box::new(crate::backends::copilot::Copilot::new(
                         self.api_key, // This is the GitHub token
                         self.proxy_url,
@@ -949,6 +960,7 @@ impl LLMBuilder {
                         self.timeout_seconds,
                         tools,
                         tool_choice,
+                        token_directory.into(),
                     )?)
                 }
             }
