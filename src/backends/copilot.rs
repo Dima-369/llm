@@ -6,7 +6,7 @@
 //! Tokens are cached locally in `~/.llm/`.
 
 use crate::{
-    chat::{ChatMessage, ChatProvider, ChatResponse, ChatRole},
+    chat::{ChatMessage, ChatProvider, ChatResponse, ChatRole, MessageType},
     chat::{Tool, ToolChoice},
     completion::{CompletionProvider, CompletionRequest, CompletionResponse},
     embedding::EmbeddingProvider,
@@ -62,6 +62,10 @@ struct CopilotChatRequest<'a> {
 struct CopilotChatMessage<'a> {
     role: &'a str,
     content: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -382,16 +386,22 @@ impl ChatProvider for Copilot {
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
         let fresh_token = self.get_refreshed_copilot_token().await?;
 
-        let mut copilot_messages: Vec<CopilotChatMessage> = messages
-            .iter()
-            .map(|m| CopilotChatMessage {
-                role: match m.role {
-                    ChatRole::User => "user",
-                    ChatRole::Assistant => "assistant",
-                },
-                content: &m.content,
-            })
-            .collect();
+        let mut copilot_messages: Vec<CopilotChatMessage> = vec![];
+        
+        for msg in messages {
+            if let MessageType::ToolResult(ref results) = msg.message_type {
+                for result in results {
+                    copilot_messages.push(CopilotChatMessage {
+                        role: "tool",
+                        content: &result.function.arguments,
+                        tool_calls: None,
+                        tool_call_id: Some(result.id.clone()),
+                    });
+                }
+            } else {
+                copilot_messages.push(chat_message_to_copilot_message(msg))
+            }
+        }
 
         // Insert system message at the beginning if present
         if let Some(system) = &self.system {
@@ -400,6 +410,8 @@ impl ChatProvider for Copilot {
                 CopilotChatMessage {
                     role: "system",
                     content: system,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
             );
         }
@@ -450,6 +462,34 @@ impl ChatProvider for Copilot {
                 raw_response: "Failed to parse CopilotChatResponse".into(),
             })
             .map(|r| Box::new(r) as Box<dyn ChatResponse>)
+    }
+}
+
+
+// Create an owned CopilotChatMessage that doesn't borrow from any temporary variables
+fn chat_message_to_copilot_message(chat_msg: &ChatMessage) -> CopilotChatMessage<'static> {
+    CopilotChatMessage {
+        role: match chat_msg.role {
+            ChatRole::User => "user",
+            ChatRole::Assistant => "assistant",
+        },
+        content: match &chat_msg.message_type {
+            MessageType::Text => {
+                // Leak the string to get a 'static reference
+                Box::leak(chat_msg.content.clone().into_boxed_str())
+            }
+            MessageType::ToolUse(_) => "",
+            MessageType::ToolResult(_) => "",
+            _ => {
+                // For other message types, use the content field
+                Box::leak(chat_msg.content.clone().into_boxed_str())
+            }
+        },
+        tool_calls: match &chat_msg.message_type {
+            MessageType::ToolUse(calls) => Some(calls.clone()),
+            _ => None,
+        },
+        tool_call_id: None,
     }
 }
 
@@ -657,6 +697,8 @@ mod tests {
                     ChatRole::Assistant => "assistant",
                 },
                 content: &m.content,
+                tool_calls: None,
+                tool_call_id: None,
             })
             .collect();
 
@@ -667,6 +709,8 @@ mod tests {
                 CopilotChatMessage {
                     role: "system",
                     content: system,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
             );
         }
