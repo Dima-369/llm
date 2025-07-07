@@ -129,7 +129,6 @@ impl Groq {
 #[async_trait]
 impl ChatProvider for Groq {
     async fn chat(&self, messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
-
         let mut groq_msgs: Vec<GroqChatMessage> = messages
             .iter()
             .map(|m| GroqChatMessage {

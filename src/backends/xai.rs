@@ -316,7 +316,6 @@ impl ChatProvider for XAI {
     ///
     /// The generated response text, or an error if the request fails.
     async fn chat(&self, messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
-
         let mut xai_msgs: Vec<XAIChatMessage> = messages
             .iter()
             .map(|m| XAIChatMessage {
@@ -350,14 +349,17 @@ impl ChatProvider for XAI {
         let search_parameters = XaiSearchParameters {
             mode: self.xai_search_mode.clone(),
             sources: Some(vec![XaiSearchSource {
-                source_type: self.xai_search_source_type.clone().unwrap_or("web".to_string()),
+                source_type: self
+                    .xai_search_source_type
+                    .clone()
+                    .unwrap_or("web".to_string()),
                 excluded_websites: self.xai_search_excluded_websites.clone(),
             }]),
-            max_search_results: self.xai_search_max_results.clone(),
+            max_search_results: self.xai_search_max_results,
             from_date: self.xai_search_from_date.clone(),
             to_date: self.xai_search_to_date.clone(),
         };
-        
+
         let body = XAIChatRequest {
             model: &self.model,
             messages: xai_msgs,
@@ -376,9 +378,7 @@ impl ChatProvider for XAI {
             }
         }
 
-        let mut request = self
-            .client
-            .post("https://api.x.ai/v1/chat/completions");
+        let mut request = self.client.post("https://api.x.ai/v1/chat/completions");
         if let Some(api_key) = &self.api_key {
             request = request.bearer_auth(api_key);
         }
@@ -434,7 +434,8 @@ impl ChatProvider for XAI {
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
-    ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError> {
+    ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError>
+    {
         if self.api_key.is_none() {
             return Err(LLMError::AuthError("Missing X.AI API key".to_string()));
         }
@@ -472,9 +473,7 @@ impl ChatProvider for XAI {
             search_parameters: None,
         };
 
-        let mut request = self
-            .client
-            .post("https://api.x.ai/v1/chat/completions");
+        let mut request = self.client.post("https://api.x.ai/v1/chat/completions");
         if let Some(api_key) = &self.api_key {
             request = request.bearer_auth(api_key);
         }
@@ -490,12 +489,15 @@ impl ChatProvider for XAI {
             let status = response.status();
             let error_text = response.text().await?;
             return Err(LLMError::ResponseFormatError {
-                message: format!("X.AI API returned error status: {}", status),
+                message: format!("X.AI API returned error status: {status}"),
                 raw_response: error_text,
             });
         }
 
-        Ok(crate::chat::create_sse_stream(response, parse_xai_sse_chunk))
+        Ok(crate::chat::create_sse_stream(
+            response,
+            parse_xai_sse_chunk,
+        ))
     }
 }
 
@@ -522,7 +524,6 @@ impl CompletionProvider for XAI {
 #[async_trait]
 impl EmbeddingProvider for XAI {
     async fn embed(&self, text: Vec<String>) -> Result<Vec<Vec<f32>>, LLMError> {
-
         let emb_format = self
             .embedding_encoding_format
             .clone()
@@ -535,16 +536,11 @@ impl EmbeddingProvider for XAI {
             dimensions: self.embedding_dimensions,
         };
 
-        let mut resp = self
-            .client
-            .post("https://api.x.ai/v1/embeddings");
+        let mut resp = self.client.post("https://api.x.ai/v1/embeddings");
         if let Some(api_key) = &self.api_key {
             resp = resp.bearer_auth(api_key);
         }
-        let resp_result = resp.json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
+        let resp_result = resp.json(&body).send().await?.error_for_status()?;
 
         let json_resp: XAIEmbeddingResponse = resp_result.json().await?;
 
@@ -584,14 +580,12 @@ impl LLMProvider for XAI {}
 fn parse_xai_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
     for line in chunk.lines() {
         let line = line.trim();
-        
-        if line.starts_with("data: ") {
-            let data = &line[6..];
-            
+
+        if let Some(data) = line.strip_prefix("data: ") {
             if data == "[DONE]" {
                 return Ok(None);
             }
-            
+
             match serde_json::from_str::<XAIStreamResponse>(data) {
                 Ok(response) => {
                     if let Some(choice) = response.choices.first() {
@@ -605,6 +599,6 @@ fn parse_xai_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
             }
         }
     }
-    
+
     Ok(None)
 }

@@ -53,7 +53,7 @@ struct DeepSeekChatResponse {
 
 impl std::fmt::Display for DeepSeekChatResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -126,7 +126,6 @@ impl ChatProvider for DeepSeek {
     ///
     /// The provider's response text or an error
     async fn chat(&self, messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
-
         let mut deepseek_msgs: Vec<DeepSeekChatMessage> = messages
             .iter()
             .map(|m| DeepSeekChatMessage {

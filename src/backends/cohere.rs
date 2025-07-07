@@ -1,8 +1,6 @@
 //! Cohere API client implementation for chat and completion functionality.
-//! 
+//!
 //! This module provides integration with Cohere's models through their API.
-
-
 
 use crate::{
     builder::LLMBackend,
@@ -29,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Client for interacting with Cohere's API.
-/// 
+///
 /// Provides methods for chat and completion requests using Cohere's models.
 pub struct Cohere {
     pub api_key: Option<String>,
@@ -136,8 +134,6 @@ struct CohereChatRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     response_format: Option<CohereResponseFormat>,
 }
-
-
 
 /// Only the total tokens are parsed, even though the API also returns prompt_tokens and completion_tokens.
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -276,14 +272,14 @@ impl std::fmt::Display for CohereChatResponse {
         ) {
             (Some(content), Some(tool_calls)) => {
                 for tool_call in tool_calls {
-                    write!(f, "{}", tool_call)?;
+                    write!(f, "{tool_call}")?;
                 }
-                write!(f, "{}", content)
+                write!(f, "{content}")
             }
-            (Some(content), None) => write!(f, "{}", content),
+            (Some(content), None) => write!(f, "{content}"),
             (None, Some(tool_calls)) => {
                 for tool_call in tool_calls {
-                    write!(f, "{}", tool_call)?;
+                    write!(f, "{tool_call}")?;
                 }
                 Ok(())
             }
@@ -294,9 +290,9 @@ impl std::fmt::Display for CohereChatResponse {
 
 impl Cohere {
     /// Creates a new Cohere client with the specified configuration.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `api_key` - Cohere API key
     /// * `model` - Model to use (defaults to "gpt-3.5-turbo")
     /// * `max_tokens` - Maximum tokens to generate
@@ -368,20 +364,19 @@ impl Cohere {
 #[async_trait]
 impl ChatProvider for Cohere {
     /// Sends a chat request to Cohere's API.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `messages` - Slice of chat messages representing the conversation
     /// * `tools` - Optional slice of tools to use in the chat
     /// # Returns
-    /// 
+    ///
     /// The model's response text or an error
     async fn chat_with_tools(
         &self,
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
-
         // Clone the messages to have an owned mutable vector.
         let messages = messages.to_vec();
 
@@ -423,8 +418,8 @@ impl ChatProvider for Cohere {
             );
         }
 
-        let response_format:
-            Option<CohereResponseFormat> = self.json_schema.clone().map(|s| s.into());
+        let response_format: Option<CohereResponseFormat> =
+            self.json_schema.clone().map(|s| s.into());
 
         let request_tools = tools.map(|t| t.to_vec()).or_else(|| self.tools.clone());
 
@@ -482,7 +477,7 @@ impl ChatProvider for Cohere {
             let status = response.status();
             let error_text = response.text().await?;
             return Err(LLMError::ResponseFormatError {
-                message: format!("Cohere API returned error status: {}", status),
+                message: format!("Cohere API returned error status: {status}"),
                 raw_response: error_text,
             });
         }
@@ -495,7 +490,7 @@ impl ChatProvider for Cohere {
         match json_resp {
             Ok(response) => Ok(Box::new(response)),
             Err(e) => Err(LLMError::ResponseFormatError {
-                message: format!("Failed to decode Cohere API response: {}", e),
+                message: format!("Failed to decode Cohere API response: {e}"),
                 raw_response: resp_text,
             }),
         }
@@ -506,20 +501,19 @@ impl ChatProvider for Cohere {
     }
 
     /// Sends a streaming chat request to Cohere's API.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `messages` - Slice of chat messages representing the conversation
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A stream of text tokens or an error
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
     ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError>
     {
-
         let messages = messages.to_vec();
         let mut cohere_msgs: Vec<CohereChatMessage> = vec![];
 
@@ -591,7 +585,7 @@ impl ChatProvider for Cohere {
             let status = response.status();
             let error_text = response.text().await?;
             return Err(LLMError::ResponseFormatError {
-                message: format!("Cohere API returned error status: {}", status),
+                message: format!("Cohere API returned error status: {status}"),
                 raw_response: error_text,
             });
         }
@@ -666,7 +660,7 @@ fn chat_message_to_api_message(chat_msg: ChatMessage) -> CohereChatMessage<'stat
 #[async_trait]
 impl CompletionProvider for Cohere {
     /// Sends a completion request to Cohere's API.
-    /// 
+    ///
     /// Currently not implemented.
     async fn complete(&self, _req: &CompletionRequest) -> Result<CompletionResponse, LLMError> {
         Ok(CompletionResponse {
@@ -708,16 +702,11 @@ impl EmbeddingProvider for Cohere {
             .join("embeddings")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let mut request = self
-            .client
-            .post(url);
+        let mut request = self.client.post(url);
         if let Some(api_key) = &self.api_key {
             request = request.bearer_auth(api_key);
         }
-        let resp = request.json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
+        let resp = request.json(&body).send().await?.error_for_status()?;
 
         let json_resp: CohereEmbeddingResponse = resp.json().await?;
 
@@ -783,15 +772,11 @@ impl ModelsProvider for Cohere {
             .join("models")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let mut request = self
-            .client
-            .get(url);
+        let mut request = self.client.get(url);
         if let Some(api_key) = &self.api_key {
             request = request.bearer_auth(api_key);
         }
-        let resp = request.send()
-            .await?
-            .error_for_status()?;
+        let resp = request.send().await?.error_for_status()?;
 
         let result = resp.json::<CohereModelListResponse>().await?;
 
@@ -815,13 +800,13 @@ impl TextToSpeechProvider for Cohere {
 }
 
 /// Parses a Server-Sent Events (SSE) chunk from Cohere's streaming API.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `chunk` - The raw SSE chunk text
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Ok(Some(String))` - Content token if found
 /// * `Ok(None)` - If chunk should be skipped (e.g., ping, done signal)
 /// * `Err(LLMError)` - If parsing fails

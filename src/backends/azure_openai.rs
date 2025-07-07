@@ -296,14 +296,14 @@ impl std::fmt::Display for AzureOpenAIChatResponse {
         ) {
             (Some(content), Some(tool_calls)) => {
                 for tool_call in tool_calls {
-                    write!(f, "{}", tool_call)?;
+                    write!(f, "{tool_call}")?;
                 }
-                write!(f, "{}", content)
+                write!(f, "{content}")
             }
-            (Some(content), None) => write!(f, "{}", content),
+            (Some(content), None) => write!(f, "{content}"),
             (None, Some(tool_calls)) => {
                 for tool_call in tool_calls {
-                    write!(f, "{}", tool_call)?;
+                    write!(f, "{tool_call}")?;
                 }
                 Ok(())
             }
@@ -406,7 +406,6 @@ impl ChatProvider for AzureOpenAI {
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
-
         let mut openai_msgs: Vec<AzureOpenAIChatMessage> = vec![];
 
         for msg in messages {
@@ -484,9 +483,7 @@ impl ChatProvider for AzureOpenAI {
         url.query_pairs_mut()
             .append_pair("api-version", &self.api_version);
 
-        let mut request = self
-            .client
-            .post(url);
+        let mut request = self.client.post(url);
         if let Some(api_key) = &self.api_key {
             request = request.header("api-key", api_key);
         }
@@ -511,7 +508,7 @@ impl ChatProvider for AzureOpenAI {
             let status = response.status();
             let error_text = response.text().await?;
             return Err(LLMError::ResponseFormatError {
-                message: format!("OpenAI API returned error status: {}", status),
+                message: format!("OpenAI API returned error status: {status}"),
                 raw_response: error_text,
             });
         }
@@ -524,7 +521,7 @@ impl ChatProvider for AzureOpenAI {
         match json_resp {
             Ok(response) => Ok(Box::new(response)),
             Err(e) => Err(LLMError::ResponseFormatError {
-                message: format!("Failed to decode Azure OpenAI API response: {}", e),
+                message: format!("Failed to decode Azure OpenAI API response: {e}"),
                 raw_response: resp_text,
             }),
         }
@@ -575,16 +572,11 @@ impl EmbeddingProvider for AzureOpenAI {
         url.query_pairs_mut()
             .append_pair("api-version", &self.api_version);
 
-        let mut req = self
-            .client
-            .post(url);
+        let mut req = self.client.post(url);
         if let Some(api_key) = &self.api_key {
             req = req.header("api-key", api_key);
         }
-        let resp = req.json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
+        let resp = req.json(&body).send().await?.error_for_status()?;
 
         let json_resp: OpenAIEmbeddingResponse = resp.json().await?;
 

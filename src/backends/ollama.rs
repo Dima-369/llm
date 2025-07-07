@@ -95,7 +95,7 @@ impl std::fmt::Display for OllamaResponse {
             }
         }
 
-        write!(f, "{}", text)
+        write!(f, "{text}")
     }
 }
 

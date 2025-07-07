@@ -68,7 +68,6 @@ pub mod agent;
 #[cfg(feature = "api")]
 pub mod api;
 
-
 #[inline]
 /// Initialize logging using env_logger if the "logging" feature is enabled.
 /// This is a no-op if the feature is not enabled.
@@ -94,7 +93,9 @@ pub trait LLMProvider:
     }
 
     fn relogin_github_copilot(&self) -> Result<(), crate::error::LLMError> {
-        Err(crate::error::LLMError::ProviderError("This provider does not support GitHub Copilot re-login.".to_string()))
+        Err(crate::error::LLMError::ProviderError(
+            "This provider does not support GitHub Copilot re-login.".to_string(),
+        ))
     }
 }
 

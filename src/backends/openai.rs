@@ -147,8 +147,6 @@ struct OpenAIChatRequest<'a> {
     web_search_options: Option<OpenAIWebSearchOptions>,
 }
 
-
-
 /// Response from OpenAI's chat API endpoint.
 #[derive(Deserialize, Debug)]
 struct OpenAIChatResponse {
@@ -282,7 +280,7 @@ impl ChatResponse for OpenAIChatResponse {
         self.choices.first().and_then(|c| c.message.content.clone())
     }
 
-        fn tool_calls(&self) -> Option<Vec<ToolCall>> {
+    fn tool_calls(&self) -> Option<Vec<ToolCall>> {
         self.choices
             .first()
             .and_then(|c| c.message.tool_calls.clone())
@@ -301,14 +299,14 @@ impl std::fmt::Display for OpenAIChatResponse {
         ) {
             (Some(content), Some(tool_calls)) => {
                 for tool_call in tool_calls {
-                    write!(f, "{}", tool_call)?;
+                    write!(f, "{tool_call}")?;
                 }
-                write!(f, "{}", content)
+                write!(f, "{content}")
             }
-            (Some(content), None) => write!(f, "{}", content),
+            (Some(content), None) => write!(f, "{content}"),
             (None, Some(tool_calls)) => {
                 for tool_call in tool_calls {
-                    write!(f, "{}", tool_call)?;
+                    write!(f, "{tool_call}")?;
                 }
                 Ok(())
             }
@@ -553,7 +551,7 @@ impl ChatProvider for OpenAI {
             let status = response.status();
             let error_text = response.text().await?;
             return Err(LLMError::ResponseFormatError {
-                message: format!("OpenAI API returned error status: {}", status),
+                message: format!("OpenAI API returned error status: {status}"),
                 raw_response: error_text,
             });
         }
@@ -566,7 +564,7 @@ impl ChatProvider for OpenAI {
         match json_resp {
             Ok(response) => Ok(Box::new(response)),
             Err(e) => Err(LLMError::ResponseFormatError {
-                message: format!("Failed to decode OpenAI API response: {}", e),
+                message: format!("Failed to decode OpenAI API response: {e}"),
                 raw_response: resp_text,
             }),
         }
@@ -662,7 +660,7 @@ impl ChatProvider for OpenAI {
             let status = response.status();
             let error_text = response.text().await?;
             return Err(LLMError::ResponseFormatError {
-                message: format!("OpenAI API returned error status: {}", status),
+                message: format!("OpenAI API returned error status: {status}"),
                 raw_response: error_text,
             });
         }
@@ -770,9 +768,7 @@ impl SpeechToTextProvider for OpenAI {
             .text("response_format", "text")
             .part("file", part);
 
-        let mut req = self
-            .client
-            .post(url);
+        let mut req = self.client.post(url);
         if let Some(api_key) = &self.api_key {
             req = req.bearer_auth(api_key);
         }
@@ -811,9 +807,7 @@ impl SpeechToTextProvider for OpenAI {
             .await
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let mut req = self
-            .client
-            .post(url);
+        let mut req = self.client.post(url);
         if let Some(api_key) = &self.api_key {
             req = req.bearer_auth(api_key);
         }
@@ -855,16 +849,11 @@ impl EmbeddingProvider for OpenAI {
             .join("embeddings")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let mut req = self
-            .client
-            .post(url);
+        let mut req = self.client.post(url);
         if let Some(api_key) = &self.api_key {
             req = req.bearer_auth(api_key);
         }
-        let resp = req.json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
+        let resp = req.json(&body).send().await?.error_for_status()?;
 
         let json_resp: OpenAIEmbeddingResponse = resp.json().await?;
 
@@ -873,8 +862,7 @@ impl EmbeddingProvider for OpenAI {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[derive(Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OpenAIModelEntry {
     pub id: String,
     pub created: Option<u64>,
@@ -898,8 +886,7 @@ impl ModelListRawEntry for OpenAIModelEntry {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[derive(Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OpenAIModelListResponse {
     pub data: Vec<OpenAIModelEntry>,
 }
@@ -932,15 +919,11 @@ impl ModelsProvider for OpenAI {
             .join("models")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let mut req = self
-            .client
-            .get(url);
+        let mut req = self.client.get(url);
         if let Some(api_key) = &self.api_key {
             req = req.bearer_auth(api_key);
         }
-        let resp = req.send()
-            .await?
-            .error_for_status()?;
+        let resp = req.send().await?.error_for_status()?;
 
         let result: OpenAIModelListResponse = resp.json().await?;
 
@@ -1002,7 +985,7 @@ impl TextToSpeechProvider for OpenAI {
             let status = resp.status();
             let error_text = resp.text().await?;
             return Err(LLMError::ResponseFormatError {
-                message: format!("OpenAI API returned error status: {}", status),
+                message: format!("OpenAI API returned error status: {status}"),
                 raw_response: error_text,
             });
         }

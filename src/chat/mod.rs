@@ -297,7 +297,8 @@ pub trait ChatProvider: Sync + Send {
     async fn chat_stream(
         &self,
         _messages: &[ChatMessage],
-    ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError> {
+    ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError>
+    {
         Err(LLMError::Generic(
             "Streaming not supported for this provider".to_string(),
         ))
@@ -513,11 +514,15 @@ impl From<ChatMessage> for SerializableChatMessage {
     fn from(msg: ChatMessage) -> Self {
         let extra = match msg.message_type {
             MessageType::Text => None,
-            MessageType::Image((mime, bytes)) => Some(SerializableMessageExtra::Image { mime, bytes }),
+            MessageType::Image((mime, bytes)) => {
+                Some(SerializableMessageExtra::Image { mime, bytes })
+            }
             MessageType::Pdf(bytes) => Some(SerializableMessageExtra::Pdf { bytes }),
             MessageType::ImageURL(url) => Some(SerializableMessageExtra::ImageUrl { url }),
             MessageType::ToolUse(calls) => Some(SerializableMessageExtra::ToolUse { calls }),
-            MessageType::ToolResult(results) => Some(SerializableMessageExtra::ToolResult { results }),
+            MessageType::ToolResult(results) => {
+                Some(SerializableMessageExtra::ToolResult { results })
+            }
         };
 
         SerializableChatMessage {
@@ -532,11 +537,15 @@ impl From<SerializableChatMessage> for ChatMessage {
     fn from(s_msg: SerializableChatMessage) -> Self {
         let message_type = match s_msg.extra {
             None => MessageType::Text,
-            Some(SerializableMessageExtra::Image { mime, bytes }) => MessageType::Image((mime, bytes)),
+            Some(SerializableMessageExtra::Image { mime, bytes }) => {
+                MessageType::Image((mime, bytes))
+            }
             Some(SerializableMessageExtra::Pdf { bytes }) => MessageType::Pdf(bytes),
             Some(SerializableMessageExtra::ImageUrl { url }) => MessageType::ImageURL(url),
             Some(SerializableMessageExtra::ToolUse { calls }) => MessageType::ToolUse(calls),
-            Some(SerializableMessageExtra::ToolResult { results }) => MessageType::ToolResult(results),
+            Some(SerializableMessageExtra::ToolResult { results }) => {
+                MessageType::ToolResult(results)
+            }
         };
 
         ChatMessage {
@@ -605,23 +614,29 @@ mod tests {
 
         // Serialize
         let json_string = serialize_messages(&messages).unwrap();
-        println!("Serialized JSON:\n{}", json_string);
+        println!("Serialized JSON:\n{json_string}");
 
         // Deserialize
         let deserialized_messages = deserialize_messages(&json_string).unwrap();
 
         // Verify
         assert_eq!(messages.len(), deserialized_messages.len());
-        
+
         // Message 1: Simple text
         assert_eq!(messages[0].role, deserialized_messages[0].role);
         assert_eq!(messages[0].content, deserialized_messages[0].content);
-        assert_eq!(messages[0].message_type, deserialized_messages[0].message_type);
+        assert_eq!(
+            messages[0].message_type,
+            deserialized_messages[0].message_type
+        );
 
         // Message 2: Tool Use
         assert_eq!(messages[1].role, deserialized_messages[1].role);
         assert_eq!(messages[1].content, deserialized_messages[1].content);
-        assert_eq!(messages[1].message_type, deserialized_messages[1].message_type);
+        assert_eq!(
+            messages[1].message_type,
+            deserialized_messages[1].message_type
+        );
         if let MessageType::ToolUse(calls) = &deserialized_messages[1].message_type {
             assert_eq!(calls[0].function.name, "get_weather");
         } else {
@@ -631,7 +646,10 @@ mod tests {
         // Message 3: Image
         assert_eq!(messages[2].role, deserialized_messages[2].role);
         assert_eq!(messages[2].content, deserialized_messages[2].content);
-        assert_eq!(messages[2].message_type, deserialized_messages[2].message_type);
+        assert_eq!(
+            messages[2].message_type,
+            deserialized_messages[2].message_type
+        );
         if let MessageType::Image((mime, bytes)) = &deserialized_messages[2].message_type {
             assert_eq!(*mime, ImageMime::JPEG);
             assert_eq!(*bytes, vec![255, 216, 255, 224]);

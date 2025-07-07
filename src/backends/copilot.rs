@@ -1,12 +1,13 @@
 //! Copilot API client implementation.
-//! 
+//!
 //! This module provides integration with GitHub Copilot's chat functionality.
 //! It handles the complete authentication flow, including the OAuth2 device flow
 //! for obtaining a GitHub token, and subsequent fetching of a short-lived Copilot token.
 //! Tokens are cached locally in `~/.llm/`.
 
-use crate::{chat::{Tool, ToolChoice},
+use crate::{
     chat::{ChatMessage, ChatProvider, ChatResponse, ChatRole},
+    chat::{Tool, ToolChoice},
     completion::{CompletionProvider, CompletionRequest, CompletionResponse},
     embedding::EmbeddingProvider,
     error::LLMError,
@@ -91,7 +92,9 @@ impl ChatResponse for CopilotChatResponse {
     }
 
     fn tool_calls(&self) -> Option<Vec<ToolCall>> {
-        self.choices.first().and_then(|c| c.message.tool_calls.clone())
+        self.choices
+            .first()
+            .and_then(|c| c.message.tool_calls.clone())
     }
 }
 
@@ -111,7 +114,8 @@ pub struct Copilot {
 
 impl Copilot {
     fn llm_dir(&self) -> Result<PathBuf, LLMError> {
-        fs::create_dir_all(&self.token_directory).map_err(|e| LLMError::Generic(format!("Failed to create token directory: {}", e)))?;
+        fs::create_dir_all(&self.token_directory)
+            .map_err(|e| LLMError::Generic(format!("Failed to create token directory: {e}")))?;
         Ok(self.token_directory.clone())
     }
 
@@ -144,16 +148,18 @@ impl Copilot {
             let proxy = reqwest::Proxy::all(&proxy_url).expect("Failed to create proxy");
             builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
-        let client = builder.build().map_err(|e| LLMError::HttpError(e.to_string()))?;
+        let client = builder
+            .build()
+            .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
         let dummy_copilot = Self {
             client: client.clone(),
-            github_token: String::new(), // Placeholder
+            github_token: String::new(),                // Placeholder
             copilot_token: Arc::new(RwLock::new(None)), // Placeholder
-            model: String::new(), // Placeholder
-            temperature: None, // Placeholder
-            tools: None, // Placeholder
-            tool_choice: None, // Placeholder
+            model: String::new(),                       // Placeholder
+            temperature: None,                          // Placeholder
+            tools: None,                                // Placeholder
+            tool_choice: None,                          // Placeholder
             token_directory: token_directory.clone(),
         };
 
@@ -168,13 +174,12 @@ impl Copilot {
                     Ok(token) => {
                         log::debug!("Loaded GitHub token from cache.");
                         token
-                    },
+                    }
                     Err(_) => {
                         log::info!("No cached GitHub token. Starting interactive authentication.");
                         tokio::task::block_in_place(|| {
-                            tokio::runtime::Handle::current().block_on(
-                                dummy_copilot.interactive_github_auth(&client)
-                            )
+                            tokio::runtime::Handle::current()
+                                .block_on(dummy_copilot.interactive_github_auth(&client))
                         })?
                     }
                 }
@@ -205,14 +210,20 @@ impl Copilot {
             .await?;
 
         let device_code_json: serde_json::Value = device_code_response.json().await?;
-        let device_code = device_code_json["device_code"].as_str().ok_or_else(|| LLMError::Generic("No device_code in response".into()))?;
-        let user_code = device_code_json["user_code"].as_str().ok_or_else(|| LLMError::Generic("No user_code in response".into()))?;
-        let verification_uri = device_code_json["verification_uri"].as_str().ok_or_else(|| LLMError::Generic("No verification_uri in response".into()))?;
+        let device_code = device_code_json["device_code"]
+            .as_str()
+            .ok_or_else(|| LLMError::Generic("No device_code in response".into()))?;
+        let user_code = device_code_json["user_code"]
+            .as_str()
+            .ok_or_else(|| LLMError::Generic("No user_code in response".into()))?;
+        let verification_uri = device_code_json["verification_uri"]
+            .as_str()
+            .ok_or_else(|| LLMError::Generic("No verification_uri in response".into()))?;
 
         println!("\nFirst time use requires authentication with GitHub.");
-        println!("Opened {} in your browser.", verification_uri);
-        println!("Please enter the following code: {}", user_code);
-        
+        println!("Opened {verification_uri} in your browser.");
+        println!("Please enter the following code: {user_code}");
+
         // Attempt to open in browser, but don't fail if it doesn't work.
         let _ = open::that(verification_uri);
 
@@ -242,19 +253,25 @@ impl Copilot {
                     }
                 }
             }
-            
+
             if !response_text.contains("authorization_pending") {
-                 return Err(LLMError::AuthError(format!("GitHub token request failed with status {}: {}", status, response_text)));
+                return Err(LLMError::AuthError(format!(
+                    "GitHub token request failed with status {status}: {response_text}"
+                )));
             }
 
             if attempt == max_attempts - 1 {
-                return Err(LLMError::AuthError("GitHub authentication timed out.".into()));
+                return Err(LLMError::AuthError(
+                    "GitHub authentication timed out.".into(),
+                ));
             }
         }
-        
-        Err(LLMError::AuthError("GitHub authentication timed out.".into()))
+
+        Err(LLMError::AuthError(
+            "GitHub authentication timed out.".into(),
+        ))
     }
-    
+
     /// Gets a fresh Copilot token, refreshing if necessary.
     async fn get_refreshed_copilot_token(&self) -> Result<CopilotToken, LLMError> {
         let should_refresh = {
@@ -281,7 +298,8 @@ impl Copilot {
 
     /// Fetches a new Copilot token from the GitHub API.
     async fn fetch_copilot_token_from_api(&self) -> Result<CopilotToken, LLMError> {
-        let response = self.client
+        let response = self
+            .client
             .get("https://api.github.com/copilot_internal/v2/token")
             .header("authorization", format!("token {}", self.github_token))
             .header("accept", "application/json")
@@ -294,32 +312,40 @@ impl Copilot {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(LLMError::AuthError(format!("Copilot token request failed with status {}: {}", status, error_text)));
+            return Err(LLMError::AuthError(format!(
+                "Copilot token request failed with status {status}: {error_text}"
+            )));
         }
 
-        response.json::<CopilotToken>().await.map_err(|e| LLMError::ResponseFormatError {
-            message: e.to_string(),
-            raw_response: "Failed to parse CopilotToken".into()
-        })
+        response
+            .json::<CopilotToken>()
+            .await
+            .map_err(|e| LLMError::ResponseFormatError {
+                message: e.to_string(),
+                raw_response: "Failed to parse CopilotToken".into(),
+            })
     }
 
     // --- Token Caching ---
     fn load_github_token(&self) -> Result<String, LLMError> {
-        let content = fs::read_to_string(self.github_token_file()?).map_err(|e| LLMError::Generic(e.to_string()))?;
+        let content = fs::read_to_string(self.github_token_file()?)
+            .map_err(|e| LLMError::Generic(e.to_string()))?;
         Ok(content)
     }
 
     fn save_github_token(&self, token: &str) -> Result<(), LLMError> {
         fs::write(self.github_token_file()?, token).map_err(|e| LLMError::Generic(e.to_string()))
     }
-    
+
     fn load_copilot_token(&self) -> Result<CopilotToken, LLMError> {
-        let content = fs::read_to_string(self.copilot_token_file()?).map_err(|e| LLMError::Generic(e.to_string()))?;
+        let content = fs::read_to_string(self.copilot_token_file()?)
+            .map_err(|e| LLMError::Generic(e.to_string()))?;
         serde_json::from_str(&content).map_err(|e| LLMError::JsonError(e.to_string()))
     }
 
     fn save_copilot_token(&self, token: &CopilotToken) -> Result<(), LLMError> {
-        let content = serde_json::to_string(token).map_err(|e| LLMError::JsonError(e.to_string()))?;
+        let content =
+            serde_json::to_string(token).map_err(|e| LLMError::JsonError(e.to_string()))?;
         fs::write(self.copilot_token_file()?, content).map_err(|e| LLMError::Generic(e.to_string()))
     }
 }
@@ -365,7 +391,8 @@ impl ChatProvider for Copilot {
             tool_choice: request_tool_choice,
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post("https://api.githubcopilot.com/chat/completions")
             .header("authorization", format!("Bearer {}", fresh_token.token))
             .header("accept", "*/*")
@@ -380,13 +407,19 @@ impl ChatProvider for Copilot {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(LLMError::ProviderError(format!("Copilot chat request failed with status {}: {}", status, error_text)));
+            return Err(LLMError::ProviderError(format!(
+                "Copilot chat request failed with status {status}: {error_text}"
+            )));
         }
 
-        response.json::<CopilotChatResponse>().await.map_err(|e| LLMError::ResponseFormatError {
-            message: e.to_string(),
-            raw_response: "Failed to parse CopilotChatResponse".into()
-        }).map(|r| Box::new(r) as Box<dyn ChatResponse>)
+        response
+            .json::<CopilotChatResponse>()
+            .await
+            .map_err(|e| LLMError::ResponseFormatError {
+                message: e.to_string(),
+                raw_response: "Failed to parse CopilotChatResponse".into(),
+            })
+            .map(|r| Box::new(r) as Box<dyn ChatResponse>)
     }
 }
 
@@ -427,9 +460,7 @@ impl LLMProvider for Copilot {
 
     fn relogin_github_copilot(&self) -> Result<(), crate::error::LLMError> {
         tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(
-                self.interactive_github_auth(&self.client)
-            )
+            tokio::runtime::Handle::current().block_on(self.interactive_github_auth(&self.client))
         })?;
         Ok(())
     }

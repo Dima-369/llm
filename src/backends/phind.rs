@@ -170,8 +170,7 @@ impl Phind {
                     .to_string();
 
                 Err(LLMError::ProviderError(format!(
-                    "APIError {}: {}",
-                    status, error_message
+                    "APIError {status}: {error_message}"
                 )))
             }
         }

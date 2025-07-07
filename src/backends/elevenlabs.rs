@@ -128,9 +128,7 @@ impl SpeechToTextProvider for ElevenLabs {
             .text("model_id", self.model_id.clone())
             .part("file", part);
 
-        let mut req = self
-            .client
-            .post(url);
+        let mut req = self.client.post(url);
         if let Some(api_key) = &self.api_key {
             req = req.header("xi-api-key", api_key);
         }
@@ -190,9 +188,7 @@ impl SpeechToTextProvider for ElevenLabs {
             .await
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let mut req = self
-            .client
-            .post(url);
+        let mut req = self.client.post(url);
         if let Some(api_key) = &self.api_key {
             req = req.header("xi-api-key", api_key);
         }
@@ -311,15 +307,11 @@ impl TextToSpeechProvider for ElevenLabs {
             "model_id": self.model_id
         });
 
-        let mut req = self
-            .client
-            .post(url);
+        let mut req = self.client.post(url);
         if let Some(api_key) = &self.api_key {
             req = req.header("xi-api-key", api_key);
         }
-        req = req
-            .header("Content-Type", "application/json")
-            .json(&body);
+        req = req.header("Content-Type", "application/json").json(&body);
 
         if let Some(t) = self.timeout_seconds {
             req = req.timeout(Duration::from_secs(t));

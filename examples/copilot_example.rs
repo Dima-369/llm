@@ -30,17 +30,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempdir()?;
     let provider = LLMBuilder::new()
         .backend(LLMBackend::Copilot)
-        .github_copilot_token_directory(temp_dir.path().to_str().ok_or("Failed to convert path to string")?)
+        .github_copilot_token_directory(
+            temp_dir
+                .path()
+                .to_str()
+                .ok_or("Failed to convert path to string")?,
+        )
         .build()?;
 
-    let messages = vec![ChatMessage::user().content(user_message.to_string()).build()];
+    let messages = vec![ChatMessage::user()
+        .content(user_message.to_string())
+        .build()];
 
-    println!("Sending message to Copilot: \"{}\"", user_message);
+    println!("Sending message to Copilot: \"{user_message}\"");
 
     // Send the chat message and await the response.
     let response = provider.chat(&messages).await?;
 
-    println!("\nCopilot's response:\n---\n{}\n---", response);
+    println!("\nCopilot's response:\n---\n{response}\n---");
 
     Ok(())
 }

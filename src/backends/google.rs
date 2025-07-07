@@ -186,14 +186,14 @@ impl std::fmt::Display for GoogleChatResponse {
         match (self.text(), self.tool_calls()) {
             (Some(text), Some(tool_calls)) => {
                 for call in tool_calls {
-                    write!(f, "{}", call)?;
+                    write!(f, "{call}")?;
                 }
-                write!(f, "{}", text)
+                write!(f, "{text}")
             }
-            (Some(text), None) => write!(f, "{}", text),
+            (Some(text), None) => write!(f, "{text}"),
             (None, Some(tool_calls)) => {
                 for call in tool_calls {
-                    write!(f, "{}", call)?;
+                    write!(f, "{call}")?;
                 }
                 Ok(())
             }
@@ -516,7 +516,6 @@ impl ChatProvider for Google {
     ///
     /// The model's response text or an error
     async fn chat(&self, messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
-
         let mut chat_contents = Vec::with_capacity(messages.len());
 
         // Add system message if present
@@ -673,7 +672,7 @@ impl ChatProvider for Google {
             Err(e) => {
                 // Return a more descriptive error with the raw response
                 Err(LLMError::ResponseFormatError {
-                    message: format!("Failed to decode Google API response: {}", e),
+                    message: format!("Failed to decode Google API response: {e}"),
                     raw_response: resp_text,
                 })
             }
@@ -695,7 +694,6 @@ impl ChatProvider for Google {
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
-
         let mut chat_contents = Vec::with_capacity(messages.len());
 
         // Add system message if present
@@ -852,7 +850,7 @@ impl ChatProvider for Google {
             Err(e) => {
                 // Return a more descriptive error with the raw response
                 Err(LLMError::ResponseFormatError {
-                    message: format!("Failed to decode Google API response: {}", e),
+                    message: format!("Failed to decode Google API response: {e}"),
                     raw_response: resp_text,
                 })
             }
@@ -873,7 +871,6 @@ impl ChatProvider for Google {
         messages: &[ChatMessage],
     ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError>
     {
-
         let mut chat_contents = Vec::with_capacity(messages.len());
 
         if let Some(system) = &self.system {
@@ -953,7 +950,7 @@ impl ChatProvider for Google {
             let status = response.status();
             let error_text = response.text().await?;
             return Err(LLMError::ResponseFormatError {
-                message: format!("Google API returned error status: {}", status),
+                message: format!("Google API returned error status: {status}"),
                 raw_response: error_text,
             });
         }
@@ -1006,8 +1003,7 @@ impl EmbeddingProvider for Google {
                 },
             };
 
-            let url = format!(
-                "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent");
+            let url = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent".to_string();
             let mut request = self.client.post(&url);
             if let Some(api_key) = &self.api_key {
                 request = request.query(&[("key", api_key)]);
@@ -1056,9 +1052,7 @@ fn parse_google_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
     for line in chunk.lines() {
         let line = line.trim();
 
-        if line.starts_with("data: ") {
-            let data = &line[6..];
-
+        if let Some(data) = line.strip_prefix("data: ") {
             match serde_json::from_str::<GoogleStreamResponse>(data) {
                 Ok(response) => {
                     if let Some(candidates) = response.candidates {

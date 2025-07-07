@@ -6,10 +6,7 @@ use std::collections::HashMap;
 
 use crate::{
     builder::LLMBackend,
-    chat::{
-        ChatMessage, ChatProvider, ChatResponse, ChatRole, MessageType, Tool,
-        ToolChoice,
-    },
+    chat::{ChatMessage, ChatProvider, ChatResponse, ChatRole, MessageType, Tool, ToolChoice},
     completion::{CompletionProvider, CompletionRequest, CompletionResponse},
     embedding::EmbeddingProvider,
     error::LLMError,
@@ -324,7 +321,6 @@ impl ChatProvider for Anthropic {
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
-
         let anthropic_messages: Vec<AnthropicMessage> = messages
             .iter()
             .map(|m| AnthropicMessage {
@@ -464,9 +460,7 @@ impl ChatProvider for Anthropic {
             thinking,
         };
 
-        let mut request = self
-            .client
-            .post("https://api.anthropic.com/v1/messages");
+        let mut request = self.client.post("https://api.anthropic.com/v1/messages");
         if let Some(api_key) = &self.api_key {
             request = request.header("x-api-key", api_key);
         }
@@ -500,7 +494,7 @@ impl ChatProvider for Anthropic {
 
         let body = resp.text().await?;
         let json_resp: AnthropicCompleteResponse = serde_json::from_str(&body)
-            .map_err(|e| LLMError::HttpError(format!("Failed to parse JSON: {}", e)))?;
+            .map_err(|e| LLMError::HttpError(format!("Failed to parse JSON: {e}")))?;
 
         Ok(Box::new(json_resp))
     }
@@ -530,8 +524,8 @@ impl ChatProvider for Anthropic {
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
-    ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError> {
-
+    ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError>
+    {
         let anthropic_messages: Vec<AnthropicMessage> = messages
             .iter()
             .map(|m| AnthropicMessage {
@@ -598,9 +592,7 @@ impl ChatProvider for Anthropic {
             thinking: None,
         };
 
-        let mut request = self
-            .client
-            .post("https://api.anthropic.com/v1/messages");
+        let mut request = self.client.post("https://api.anthropic.com/v1/messages");
         if let Some(api_key) = &self.api_key {
             request = request.header("x-api-key", api_key);
         }
@@ -619,12 +611,15 @@ impl ChatProvider for Anthropic {
             let status = response.status();
             let error_text = response.text().await?;
             return Err(LLMError::ResponseFormatError {
-                message: format!("Anthropic API returned error status: {}", status),
+                message: format!("Anthropic API returned error status: {status}"),
                 raw_response: error_text,
             });
         }
 
-        Ok(crate::chat::create_sse_stream(response, parse_anthropic_sse_chunk))
+        Ok(crate::chat::create_sse_stream(
+            response,
+            parse_anthropic_sse_chunk,
+        ))
     }
 }
 
@@ -686,7 +681,7 @@ pub struct AnthropicModelEntry {
     created_at: DateTime<Utc>,
     id: String,
     #[serde(flatten)]
-    extra: Value
+    extra: Value,
 }
 
 impl ModelListRawEntry for AnthropicModelEntry {
@@ -709,9 +704,7 @@ impl ModelsProvider for Anthropic {
         &self,
         _request: Option<&ModelListRequest>,
     ) -> Result<Box<dyn ModelListResponse>, LLMError> {
-        let mut req = self
-            .client
-            .get("https://api.anthropic.com/v1/models");
+        let mut req = self.client.get("https://api.anthropic.com/v1/models");
         if let Some(api_key) = &self.api_key {
             req = req.header("x-api-key", api_key);
         }
@@ -747,10 +740,8 @@ impl crate::LLMProvider for Anthropic {
 fn parse_anthropic_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
     for line in chunk.lines() {
         let line = line.trim();
-        
-        if line.starts_with("data: ") {
-            let data = &line[6..];
-            
+
+        if let Some(data) = line.strip_prefix("data: ") {
             match serde_json::from_str::<AnthropicStreamResponse>(data) {
                 Ok(response) => {
                     if response.response_type == "content_block_delta" {
@@ -766,6 +757,6 @@ fn parse_anthropic_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
             }
         }
     }
-    
+
     Ok(None)
 }

@@ -390,25 +390,37 @@ impl LLMBuilder {
     }
 
     /// Set the web search user location type
-    pub fn openai_web_search_user_location_type(mut self, location_type: impl Into<String>) -> Self {
+    pub fn openai_web_search_user_location_type(
+        mut self,
+        location_type: impl Into<String>,
+    ) -> Self {
         self.openai_web_search_user_location_type = Some(location_type.into());
         self
     }
 
     /// Set the web search user location approximate country
-    pub fn openai_web_search_user_location_approximate_country(mut self, country: impl Into<String>) -> Self {
+    pub fn openai_web_search_user_location_approximate_country(
+        mut self,
+        country: impl Into<String>,
+    ) -> Self {
         self.openai_web_search_user_location_approximate_country = Some(country.into());
         self
     }
 
     /// Set the web search user location approximate city
-    pub fn openai_web_search_user_location_approximate_city(mut self, city: impl Into<String>) -> Self {
+    pub fn openai_web_search_user_location_approximate_city(
+        mut self,
+        city: impl Into<String>,
+    ) -> Self {
         self.openai_web_search_user_location_approximate_city = Some(city.into());
         self
     }
 
     /// Set the web search user location approximate region
-    pub fn openai_web_search_user_location_approximate_region(mut self, region: impl Into<String>) -> Self {
+    pub fn openai_web_search_user_location_approximate_region(
+        mut self,
+        region: impl Into<String>,
+    ) -> Self {
         self.openai_web_search_user_location_approximate_region = Some(region.into());
         self
     }
@@ -418,7 +430,6 @@ impl LLMBuilder {
         self.github_copilot_token_directory = Some(path.into());
         self
     }
-    
 
     #[deprecated(note = "Renamed to `xai_search_mode`.")]
     pub fn search_mode(self, mode: impl Into<String>) -> Self {
@@ -561,7 +572,6 @@ impl LLMBuilder {
         )));
         self
     }
-
 
     /// Builds and returns a configured LLM provider instance.
     ///
@@ -918,7 +928,9 @@ impl LLMBuilder {
                 #[cfg(feature = "copilot")]
                 {
                     let token_directory = self.github_copilot_token_directory.ok_or_else(|| {
-                        LLMError::InvalidRequest("No GitHub Copilot token directory provided".to_string())
+                        LLMError::InvalidRequest(
+                            "No GitHub Copilot token directory provided".to_string(),
+                        )
                     })?;
                     Box::new(crate::backends::copilot::Copilot::new(
                         self.api_key, // This is the GitHub token
@@ -967,7 +979,7 @@ impl LLMBuilder {
             Some(ToolChoice::Tool(ref name)) => {
                 match self.tools.clone().map(|tools| tools.iter().any(|tool| tool.function.name == *name)) {
                     Some(true) => Ok((self.tools.clone(), self.tool_choice.clone())),
-                    _ => Err(LLMError::ToolConfigError(format!("Tool({}) cannot be tool choice: no tool with name {} found.  Did you forget to add it with .function?", name, name))),
+                    _ => Err(LLMError::ToolConfigError(format!("Tool({name}) cannot be tool choice: no tool with name {name} found.  Did you forget to add it with .function?"))),
                 }
             }
             Some(_) if self.tools.is_none() => Err(LLMError::ToolConfigError(
