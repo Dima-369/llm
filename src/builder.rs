@@ -13,6 +13,7 @@ use crate::{
     LLMProvider,
 };
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -184,7 +185,7 @@ pub struct LLMBuilder {
     /// OpenAI web search user location approximate region
     openai_web_search_user_location_approximate_region: Option<String>,
     /// GitHub Copilot token directory
-    github_copilot_token_directory: Option<String>,
+    github_copilot_token_directory: Option<PathBuf>,
 }
 
 impl LLMBuilder {
@@ -426,7 +427,7 @@ impl LLMBuilder {
     }
 
     /// Sets the GitHub Copilot token directory.
-    pub fn github_copilot_token_directory(mut self, path: impl Into<String>) -> Self {
+    pub fn github_copilot_token_directory(mut self, path: impl Into<PathBuf>) -> Self {
         self.github_copilot_token_directory = Some(path.into());
         self
     }
@@ -940,7 +941,7 @@ impl LLMBuilder {
                         self.timeout_seconds,
                         tools,
                         tool_choice,
-                        token_directory.into(),
+                        token_directory,
                     )?)
                 }
             }
