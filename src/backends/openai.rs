@@ -33,7 +33,7 @@ use serde_json::Value;
 ///
 /// Provides methods for chat and completion requests using OpenAI's models.
 pub struct OpenAI {
-    pub api_key: String,
+    pub api_key: Option<String>,
     pub base_url: Url,
     pub model: String,
     pub max_tokens: Option<u32>,
@@ -337,9 +337,8 @@ impl OpenAI {
     /// * `tool_choice` - Determines how the model uses tools
     /// * `reasoning_effort` - Reasoning effort level
     /// * `json_schema` - JSON schema for structured output
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        api_key: impl Into<String>,
+        api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,
         base_url: Option<String>,
         model: Option<String>,
@@ -373,7 +372,7 @@ impl OpenAI {
             builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
         Self {
-            api_key: api_key.into(),
+            api_key: api_key.map(Into::into),
             base_url: Url::parse(
                 &base_url.unwrap_or_else(|| "https://api.openai.com/v1/".to_owned()),
             )
@@ -420,10 +419,6 @@ impl ChatProvider for OpenAI {
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing OpenAI API key".to_string()));
-        }
-
         // Clone the messages to have an owned mutable vector.
         let messages = messages.to_vec();
 
@@ -529,7 +524,11 @@ impl ChatProvider for OpenAI {
             .join("chat/completions")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let mut request = self.client.post(url).bearer_auth(&self.api_key).json(&body);
+        let mut request = self.client.post(url);
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        request = request.json(&body);
 
         if log::log_enabled!(log::Level::Trace) {
             if let Ok(json) = serde_json::to_string(&body) {
@@ -591,10 +590,6 @@ impl ChatProvider for OpenAI {
         messages: &[ChatMessage],
     ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError>
     {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing OpenAI API key".to_string()));
-        }
-
         let messages = messages.to_vec();
         let mut openai_msgs: Vec<OpenAIChatMessage> = vec![];
 
@@ -651,7 +646,11 @@ impl ChatProvider for OpenAI {
             .join("chat/completions")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let mut request = self.client.post(url).bearer_auth(&self.api_key).json(&body);
+        let mut request = self.client.post(url);
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        request = request.json(&body);
 
         if let Some(timeout) = self.timeout_seconds {
             request = request.timeout(std::time::Duration::from_secs(timeout));
@@ -773,9 +772,11 @@ impl SpeechToTextProvider for OpenAI {
 
         let mut req = self
             .client
-            .post(url)
-            .bearer_auth(&self.api_key)
-            .multipart(form);
+            .post(url);
+        if let Some(api_key) = &self.api_key {
+            req = req.bearer_auth(api_key);
+        }
+        req = req.multipart(form);
 
         if let Some(t) = self.timeout_seconds {
             req = req.timeout(Duration::from_secs(t));
@@ -812,9 +813,11 @@ impl SpeechToTextProvider for OpenAI {
 
         let mut req = self
             .client
-            .post(url)
-            .bearer_auth(&self.api_key)
-            .multipart(form);
+            .post(url);
+        if let Some(api_key) = &self.api_key {
+            req = req.bearer_auth(api_key);
+        }
+        req = req.multipart(form);
 
         if let Some(t) = self.timeout_seconds {
             req = req.timeout(Duration::from_secs(t));
@@ -831,7 +834,7 @@ impl SpeechToTextProvider for OpenAI {
 #[async_trait]
 impl EmbeddingProvider for OpenAI {
     async fn embed(&self, input: Vec<String>) -> Result<Vec<Vec<f32>>, LLMError> {
-        if self.api_key.is_empty() {
+        if self.api_key.is_none() {
             return Err(LLMError::AuthError("Missing OpenAI API key".into()));
         }
 
@@ -852,11 +855,13 @@ impl EmbeddingProvider for OpenAI {
             .join("embeddings")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let resp = self
+        let mut req = self
             .client
-            .post(url)
-            .bearer_auth(&self.api_key)
-            .json(&body)
+            .post(url);
+        if let Some(api_key) = &self.api_key {
+            req = req.bearer_auth(api_key);
+        }
+        let resp = req.json(&body)
             .send()
             .await?
             .error_for_status()?;
@@ -869,6 +874,7 @@ impl EmbeddingProvider for OpenAI {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[derive(Serialize)]
 pub struct OpenAIModelEntry {
     pub id: String,
     pub created: Option<u64>,
@@ -893,6 +899,7 @@ impl ModelListRawEntry for OpenAIModelEntry {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[derive(Serialize)]
 pub struct OpenAIModelListResponse {
     pub data: Vec<OpenAIModelEntry>,
 }
@@ -925,15 +932,17 @@ impl ModelsProvider for OpenAI {
             .join("models")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let resp = self
+        let mut req = self
             .client
-            .get(url)
-            .bearer_auth(&self.api_key)
-            .send()
+            .get(url);
+        if let Some(api_key) = &self.api_key {
+            req = req.bearer_auth(api_key);
+        }
+        let resp = req.send()
             .await?
             .error_for_status()?;
 
-        let result = resp.json::<OpenAIModelListResponse>().await?;
+        let result: OpenAIModelListResponse = resp.json().await?;
 
         Ok(Box::new(result))
     }
@@ -955,7 +964,7 @@ impl TextToSpeechProvider for OpenAI {
     /// # Returns
     /// * `Result<Vec<u8>, LLMError>` - Audio data as bytes or error
     async fn speech(&self, text: &str) -> Result<Vec<u8>, LLMError> {
-        if self.api_key.is_empty() {
+        if self.api_key.is_none() {
             return Err(LLMError::AuthError("Missing OpenAI API key".into()));
         }
 
@@ -977,7 +986,11 @@ impl TextToSpeechProvider for OpenAI {
             voice: self.voice.clone().unwrap_or("alloy".to_string()),
         };
 
-        let mut req = self.client.post(url).bearer_auth(&self.api_key).json(&body);
+        let mut req = self.client.post(url);
+        if let Some(api_key) = &self.api_key {
+            req = req.bearer_auth(api_key);
+        }
+        req = req.json(&body);
 
         if let Some(t) = self.timeout_seconds {
             req = req.timeout(Duration::from_secs(t));

@@ -32,7 +32,7 @@ use serde_json::Value;
 /// 
 /// Provides methods for chat and completion requests using Cohere's models.
 pub struct Cohere {
-    pub api_key: String,
+    pub api_key: Option<String>,
     pub base_url: Url,
     pub model: String,
     pub max_tokens: Option<u32>,
@@ -314,7 +314,7 @@ impl Cohere {
     /// * `json_schema` - JSON schema for structured output
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        api_key: impl Into<String>,
+        api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,
         base_url: Option<String>,
         model: Option<String>,
@@ -341,7 +341,7 @@ impl Cohere {
             builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
         Self {
-            api_key: api_key.into(),
+            api_key: api_key.map(Into::into),
             base_url: Url::parse(
                 &base_url.unwrap_or_else(|| "https://api.cohere.ai/compatibility/v1/".to_owned()),
             )
@@ -381,9 +381,6 @@ impl ChatProvider for Cohere {
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing Cohere API key".to_string()));
-        }
 
         // Clone the messages to have an owned mutable vector.
         let messages = messages.to_vec();
@@ -456,7 +453,11 @@ impl ChatProvider for Cohere {
             .join("chat/completions")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let mut request = self.client.post(url).bearer_auth(&self.api_key).json(&body);
+        let mut request = self.client.post(url);
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        request = request.json(&body);
 
         if log::log_enabled!(log::Level::Trace) {
             if let Ok(json) = serde_json::to_string(&body) {
@@ -518,9 +519,6 @@ impl ChatProvider for Cohere {
         messages: &[ChatMessage],
     ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError>
     {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing Cohere API key".to_string()));
-        }
 
         let messages = messages.to_vec();
         let mut cohere_msgs: Vec<CohereChatMessage> = vec![];
@@ -577,7 +575,11 @@ impl ChatProvider for Cohere {
             .join("chat/completions")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let mut request = self.client.post(url).bearer_auth(&self.api_key).json(&body);
+        let mut request = self.client.post(url);
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        request = request.json(&body);
 
         if let Some(timeout) = self.timeout_seconds {
             request = request.timeout(std::time::Duration::from_secs(timeout));
@@ -685,7 +687,7 @@ impl SpeechToTextProvider for Cohere {
 #[async_trait]
 impl EmbeddingProvider for Cohere {
     async fn embed(&self, input: Vec<String>) -> Result<Vec<Vec<f32>>, LLMError> {
-        if self.api_key.is_empty() {
+        if self.api_key.is_none() {
             return Err(LLMError::AuthError("Missing Cohere API key".into()));
         }
 
@@ -706,11 +708,13 @@ impl EmbeddingProvider for Cohere {
             .join("embeddings")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let resp = self
+        let mut request = self
             .client
-            .post(url)
-            .bearer_auth(&self.api_key)
-            .json(&body)
+            .post(url);
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        let resp = request.json(&body)
             .send()
             .await?
             .error_for_status()?;
@@ -779,11 +783,13 @@ impl ModelsProvider for Cohere {
             .join("models")
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 
-        let resp = self
+        let mut request = self
             .client
-            .get(url)
-            .bearer_auth(&self.api_key)
-            .send()
+            .get(url);
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        let resp = request.send()
             .await?
             .error_for_status()?;
 

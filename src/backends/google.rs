@@ -76,7 +76,7 @@ struct GoogleUsageMetadata {
 /// It implements the [`ChatProvider`], [`CompletionProvider`], and [`EmbeddingProvider`] traits.
 pub struct Google {
     /// API key for authentication with Google's API
-    pub api_key: String,
+    pub api_key: Option<String>,
     /// Model identifier (e.g. "gemini-1.5-flash")
     pub model: String,
     /// Maximum number of tokens to generate in responses
@@ -466,7 +466,7 @@ impl Google {
     /// A new `Google` client instance
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        api_key: impl Into<String>,
+        api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,
         model: Option<String>,
         max_tokens: Option<u32>,
@@ -488,7 +488,7 @@ impl Google {
             builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
         Self {
-            api_key: api_key.into(),
+            api_key: api_key.map(Into::into),
             model: model.unwrap_or_else(|| "gemini-1.5-flash".to_string()),
             max_tokens,
             temperature,
@@ -516,9 +516,6 @@ impl ChatProvider for Google {
     ///
     /// The model's response text or an error
     async fn chat(&self, messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing Google API key".to_string()));
-        }
 
         let mut chat_contents = Vec::with_capacity(messages.len());
 
@@ -640,12 +637,14 @@ impl ChatProvider for Google {
         }
 
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
-            model = self.model,
-            key = self.api_key
+            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            model = self.model
         );
-
-        let mut request = self.client.post(&url).json(&req_body);
+        let mut request = self.client.post(&url);
+        if let Some(api_key) = &self.api_key {
+            request = request.query(&[("key", api_key)]);
+        }
+        request = request.json(&req_body);
 
         if let Some(timeout) = self.timeout_seconds {
             request = request.timeout(std::time::Duration::from_secs(timeout));
@@ -696,9 +695,6 @@ impl ChatProvider for Google {
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing Google API key".to_string()));
-        }
 
         let mut chat_contents = Vec::with_capacity(messages.len());
 
@@ -820,13 +816,14 @@ impl ChatProvider for Google {
         }
 
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
-            model = self.model,
-            key = self.api_key
-
+            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            model = self.model
         );
-
-        let mut request = self.client.post(&url).json(&req_body);
+        let mut request = self.client.post(&url);
+        if let Some(api_key) = &self.api_key {
+            request = request.query(&[("key", api_key)]);
+        }
+        request = request.json(&req_body);
 
         if let Some(timeout) = self.timeout_seconds {
             request = request.timeout(std::time::Duration::from_secs(timeout));
@@ -876,9 +873,6 @@ impl ChatProvider for Google {
         messages: &[ChatMessage],
     ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError>
     {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing Google API key".to_string()));
-        }
 
         let mut chat_contents = Vec::with_capacity(messages.len());
 
@@ -940,12 +934,14 @@ impl ChatProvider for Google {
         };
 
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={key}",
-            model = self.model,
-            key = self.api_key
+            "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse",
+            model = self.model
         );
-
-        let mut request = self.client.post(&url).json(&req_body);
+        let mut request = self.client.post(&url);
+        if let Some(api_key) = &self.api_key {
+            request = request.query(&[("key", api_key)]);
+        }
+        request = request.json(&req_body);
 
         if let Some(timeout) = self.timeout_seconds {
             request = request.timeout(std::time::Duration::from_secs(timeout));
@@ -995,7 +991,7 @@ impl CompletionProvider for Google {
 #[async_trait]
 impl EmbeddingProvider for Google {
     async fn embed(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, LLMError> {
-        if self.api_key.is_empty() {
+        if self.api_key.is_none() {
             return Err(LLMError::AuthError("Missing Google API key".to_string()));
         }
 
@@ -1011,17 +1007,16 @@ impl EmbeddingProvider for Google {
             };
 
             let url = format!(
-                "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={}",
-                self.api_key
-            );
+                "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent");
+            let mut request = self.client.post(&url);
+            if let Some(api_key) = &self.api_key {
+                request = request.query(&[("key", api_key)]);
+            }
+            request = request.json(&req_body);
 
-            let resp = self
-                .client
-                .post(&url)
-                .json(&req_body)
-                .send()
-                .await?
-                .error_for_status()?;
+            let resp = request.send().await?;
+
+            let resp = resp.error_for_status()?;
 
             let embedding_resp: GoogleEmbeddingResponse = resp.json().await?;
             embeddings.push(embedding_resp.embedding.values);

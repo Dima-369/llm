@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 /// It handles authentication, request configuration, and response parsing.
 pub struct XAI {
     /// API key for authentication with X.AI services
-    pub api_key: String,
+    pub api_key: Option<String>,
     /// Model identifier to use for requests (e.g. "grok-2-latest")
     pub model: String,
     /// Maximum number of tokens to generate in responses
@@ -252,7 +252,7 @@ impl XAI {
     /// A configured X.AI client instance ready to make API requests.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        api_key: impl Into<String>,
+        api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,
         model: Option<String>,
         max_tokens: Option<u32>,
@@ -281,7 +281,7 @@ impl XAI {
             builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
         Self {
-            api_key: api_key.into(),
+            api_key: api_key.map(Into::into),
             model: model.unwrap_or("grok-2-latest".to_string()),
             max_tokens,
             temperature,
@@ -316,9 +316,6 @@ impl ChatProvider for XAI {
     ///
     /// The generated response text, or an error if the request fails.
     async fn chat(&self, messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing X.AI API key".to_string()));
-        }
 
         let mut xai_msgs: Vec<XAIChatMessage> = messages
             .iter()
@@ -381,9 +378,11 @@ impl ChatProvider for XAI {
 
         let mut request = self
             .client
-            .post("https://api.x.ai/v1/chat/completions")
-            .bearer_auth(&self.api_key)
-            .json(&body);
+            .post("https://api.x.ai/v1/chat/completions");
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        request = request.json(&body);
 
         if let Some(timeout) = self.timeout_seconds {
             request = request.timeout(std::time::Duration::from_secs(timeout));
@@ -436,7 +435,7 @@ impl ChatProvider for XAI {
         &self,
         messages: &[ChatMessage],
     ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError> {
-        if self.api_key.is_empty() {
+        if self.api_key.is_none() {
             return Err(LLMError::AuthError("Missing X.AI API key".to_string()));
         }
 
@@ -475,9 +474,11 @@ impl ChatProvider for XAI {
 
         let mut request = self
             .client
-            .post("https://api.x.ai/v1/chat/completions")
-            .bearer_auth(&self.api_key)
-            .json(&body);
+            .post("https://api.x.ai/v1/chat/completions");
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        request = request.json(&body);
 
         if let Some(timeout) = self.timeout_seconds {
             request = request.timeout(std::time::Duration::from_secs(timeout));
@@ -521,9 +522,6 @@ impl CompletionProvider for XAI {
 #[async_trait]
 impl EmbeddingProvider for XAI {
     async fn embed(&self, text: Vec<String>) -> Result<Vec<Vec<f32>>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing X.AI API key".into()));
-        }
 
         let emb_format = self
             .embedding_encoding_format
@@ -537,16 +535,18 @@ impl EmbeddingProvider for XAI {
             dimensions: self.embedding_dimensions,
         };
 
-        let resp = self
+        let mut resp = self
             .client
-            .post("https://api.x.ai/v1/embeddings")
-            .bearer_auth(&self.api_key)
-            .json(&body)
+            .post("https://api.x.ai/v1/embeddings");
+        if let Some(api_key) = &self.api_key {
+            resp = resp.bearer_auth(api_key);
+        }
+        let resp_result = resp.json(&body)
             .send()
             .await?
             .error_for_status()?;
 
-        let json_resp: XAIEmbeddingResponse = resp.json().await?;
+        let json_resp: XAIEmbeddingResponse = resp_result.json().await?;
 
         let embeddings = json_resp.data.into_iter().map(|d| d.embedding).collect();
         Ok(embeddings)

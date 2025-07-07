@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Provides methods for chat and completion requests using Azure OpenAI's models.
 pub struct AzureOpenAI {
-    pub api_key: String,
+    pub api_key: Option<String>,
     pub api_version: String,
     pub base_url: Url,
     pub model: String,
@@ -334,7 +334,7 @@ impl AzureOpenAI {
     /// * `json_schema` - JSON schema for structured output
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        api_key: impl Into<String>,
+        api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,
         api_version: impl Into<String>,
         deployment_id: impl Into<String>,
@@ -367,7 +367,7 @@ impl AzureOpenAI {
         let deployment_id = deployment_id.into();
 
         Self {
-            api_key: api_key.into(),
+            api_key: api_key.map(Into::into),
             api_version: api_version.into(),
             base_url: Url::parse(&format!("{endpoint}/openai/deployments/{deployment_id}/"))
                 .expect("Failed to parse base Url"),
@@ -406,11 +406,6 @@ impl ChatProvider for AzureOpenAI {
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError(
-                "Missing Azure OpenAI API key".to_string(),
-            ));
-        }
 
         let mut openai_msgs: Vec<AzureOpenAIChatMessage> = vec![];
 
@@ -491,9 +486,11 @@ impl ChatProvider for AzureOpenAI {
 
         let mut request = self
             .client
-            .post(url)
-            .header("api-key", &self.api_key)
-            .json(&body);
+            .post(url);
+        if let Some(api_key) = &self.api_key {
+            request = request.header("api-key", api_key);
+        }
+        request = request.json(&body);
 
         if let Some(timeout) = self.timeout_seconds {
             request = request.timeout(std::time::Duration::from_secs(timeout));
@@ -554,7 +551,7 @@ impl CompletionProvider for AzureOpenAI {
 #[async_trait]
 impl EmbeddingProvider for AzureOpenAI {
     async fn embed(&self, input: Vec<String>) -> Result<Vec<Vec<f32>>, LLMError> {
-        if self.api_key.is_empty() {
+        if self.api_key.is_none() {
             return Err(LLMError::AuthError("Missing OpenAI API key".into()));
         }
 
@@ -578,11 +575,13 @@ impl EmbeddingProvider for AzureOpenAI {
         url.query_pairs_mut()
             .append_pair("api-version", &self.api_version);
 
-        let resp = self
+        let mut req = self
             .client
-            .post(url)
-            .header("api-key", &self.api_key)
-            .json(&body)
+            .post(url);
+        if let Some(api_key) = &self.api_key {
+            req = req.header("api-key", api_key);
+        }
+        let resp = req.json(&body)
             .send()
             .await?
             .error_for_status()?;

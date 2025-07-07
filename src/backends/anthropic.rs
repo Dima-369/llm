@@ -31,7 +31,7 @@ use serde_json::Value;
 /// Provides methods for chat and completion requests using Anthropic's models.
 #[derive(Debug)]
 pub struct Anthropic {
-    pub api_key: String,
+    pub api_key: Option<String>,
     pub model: String,
     pub max_tokens: u32,
     pub temperature: f32,
@@ -265,7 +265,7 @@ impl Anthropic {
     /// * `thinking_budget_tokens` - Budget tokens for thinking (optional)
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        api_key: impl Into<String>,
+        api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,
         model: Option<String>,
         max_tokens: Option<u32>,
@@ -289,7 +289,7 @@ impl Anthropic {
             builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
         Self {
-            api_key: api_key.into(),
+            api_key: api_key.map(Into::into),
             model: model.unwrap_or_else(|| "claude-3.5-sonnet-20240620".to_string()),
             max_tokens: max_tokens.unwrap_or(4096),
             temperature: temperature.unwrap_or(0.7),
@@ -324,9 +324,6 @@ impl ChatProvider for Anthropic {
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing Anthropic API key".to_string()));
-        }
 
         let anthropic_messages: Vec<AnthropicMessage> = messages
             .iter()
@@ -469,8 +466,11 @@ impl ChatProvider for Anthropic {
 
         let mut request = self
             .client
-            .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", &self.api_key)
+            .post("https://api.anthropic.com/v1/messages");
+        if let Some(api_key) = &self.api_key {
+            request = request.header("x-api-key", api_key);
+        }
+        request = request
             .header("Content-Type", "application/json")
             .header("anthropic-version", "2023-06-01")
             .json(&req_body);
@@ -531,9 +531,6 @@ impl ChatProvider for Anthropic {
         &self,
         messages: &[ChatMessage],
     ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<String, LLMError>> + Send>>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing Anthropic API key".to_string()));
-        }
 
         let anthropic_messages: Vec<AnthropicMessage> = messages
             .iter()
@@ -603,8 +600,11 @@ impl ChatProvider for Anthropic {
 
         let mut request = self
             .client
-            .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", &self.api_key)
+            .post("https://api.anthropic.com/v1/messages");
+        if let Some(api_key) = &self.api_key {
+            request = request.header("x-api-key", api_key);
+        }
+        request = request
             .header("Content-Type", "application/json")
             .header("anthropic-version", "2023-06-01")
             .json(&req_body);
@@ -709,10 +709,13 @@ impl ModelsProvider for Anthropic {
         &self,
         _request: Option<&ModelListRequest>,
     ) -> Result<Box<dyn ModelListResponse>, LLMError> {
-        let resp = self
+        let mut req = self
             .client
-            .get("https://api.anthropic.com/v1/models")
-            .header("x-api-key", &self.api_key)
+            .get("https://api.anthropic.com/v1/models");
+        if let Some(api_key) = &self.api_key {
+            req = req.header("x-api-key", api_key);
+        }
+        let resp = req
             .header("Content-Type", "application/json")
             .header("anthropic-version", "2023-06-01")
             .send()

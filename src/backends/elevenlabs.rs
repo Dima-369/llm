@@ -18,7 +18,7 @@ use std::time::Duration;
 /// It implements various LLM provider traits but only supports speech-to-text functionality.
 pub struct ElevenLabs {
     /// API key for ElevenLabs authentication
-    api_key: String,
+    api_key: Option<String>,
     /// Model identifier for speech-to-text
     model_id: String,
     /// Base URL for API requests
@@ -86,7 +86,7 @@ impl ElevenLabs {
     ///
     /// A new ElevenLabs instance
     pub fn new(
-        api_key: String,
+        api_key: Option<String>,
         proxy_url: Option<String>,
         model_id: String,
         base_url: String,
@@ -130,9 +130,11 @@ impl SpeechToTextProvider for ElevenLabs {
 
         let mut req = self
             .client
-            .post(url)
-            .header("xi-api-key", &self.api_key)
-            .multipart(form);
+            .post(url);
+        if let Some(api_key) = &self.api_key {
+            req = req.header("xi-api-key", api_key);
+        }
+        req = req.multipart(form);
 
         if let Some(t) = self.timeout_seconds {
             req = req.timeout(Duration::from_secs(t));
@@ -190,9 +192,11 @@ impl SpeechToTextProvider for ElevenLabs {
 
         let mut req = self
             .client
-            .post(url)
-            .header("xi-api-key", &self.api_key)
-            .multipart(form);
+            .post(url);
+        if let Some(api_key) = &self.api_key {
+            req = req.header("xi-api-key", api_key);
+        }
+        req = req.multipart(form);
 
         if let Some(t) = self.timeout_seconds {
             req = req.timeout(Duration::from_secs(t));
@@ -309,8 +313,11 @@ impl TextToSpeechProvider for ElevenLabs {
 
         let mut req = self
             .client
-            .post(url)
-            .header("xi-api-key", &self.api_key)
+            .post(url);
+        if let Some(api_key) = &self.api_key {
+            req = req.header("xi-api-key", api_key);
+        }
+        req = req
             .header("Content-Type", "application/json")
             .json(&body);
 

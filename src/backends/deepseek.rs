@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::ToolCall;
 
 pub struct DeepSeek {
-    pub api_key: String,
+    pub api_key: Option<String>,
     pub model: String,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
@@ -84,7 +84,7 @@ impl ChatResponse for DeepSeekChatResponse {
 
 impl DeepSeek {
     pub fn new(
-        api_key: impl Into<String>,
+        api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,
         model: Option<String>,
         max_tokens: Option<u32>,
@@ -102,7 +102,7 @@ impl DeepSeek {
             builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
         Self {
-            api_key: api_key.into(),
+            api_key: api_key.map(Into::into),
             model: model.unwrap_or("deepseek-chat".to_string()),
             max_tokens,
             temperature,
@@ -126,9 +126,6 @@ impl ChatProvider for DeepSeek {
     ///
     /// The provider's response text or an error
     async fn chat(&self, messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing DeepSeek API key".to_string()));
-        }
 
         let mut deepseek_msgs: Vec<DeepSeekChatMessage> = messages
             .iter()
@@ -166,9 +163,11 @@ impl ChatProvider for DeepSeek {
 
         let mut request = self
             .client
-            .post("https://api.deepseek.com/v1/chat/completions")
-            .bearer_auth(&self.api_key)
-            .json(&body);
+            .post("https://api.deepseek.com/v1/chat/completions");
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        request = request.json(&body);
 
         if let Some(timeout) = self.timeout_seconds {
             request = request.timeout(std::time::Duration::from_secs(timeout));

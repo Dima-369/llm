@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 /// Client for interacting with Groq's API.
 pub struct Groq {
-    pub api_key: String,
+    pub api_key: Option<String>,
     pub model: String,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
@@ -92,7 +92,7 @@ impl ChatResponse for GroqChatResponse {
 impl Groq {
     /// Creates a new Groq client with the specified configuration.
     pub fn new(
-        api_key: impl Into<String>,
+        api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,
         model: Option<String>,
         max_tokens: Option<u32>,
@@ -112,7 +112,7 @@ impl Groq {
             builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
         Self {
-            api_key: api_key.into(),
+            api_key: api_key.map(Into::into),
             model: model.unwrap_or("llama-3.3-70b-versatile".to_string()),
             max_tokens,
             temperature,
@@ -129,9 +129,6 @@ impl Groq {
 #[async_trait]
 impl ChatProvider for Groq {
     async fn chat(&self, messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
-        if self.api_key.is_empty() {
-            return Err(LLMError::AuthError("Missing Groq API key".to_string()));
-        }
 
         let mut groq_msgs: Vec<GroqChatMessage> = messages
             .iter()
@@ -173,9 +170,11 @@ impl ChatProvider for Groq {
         let mut request = self
             .client
             .post("https://api.groq.com/openai/v1/chat/completions")
-            .header("Content-Type", "application/json")
-            .bearer_auth(&self.api_key)
-            .json(&body);
+            .header("Content-Type", "application/json");
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        request = request.json(&body);
 
         if let Some(timeout) = self.timeout_seconds {
             request = request.timeout(std::time::Duration::from_secs(timeout));

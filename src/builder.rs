@@ -603,11 +603,8 @@ impl LLMBuilder {
 
                 #[cfg(feature = "openai")]
                 {
-                    let key = self.api_key.ok_or_else(|| {
-                        LLMError::InvalidRequest("No API key provided for OpenAI".to_string())
-                    })?;
                     Box::new(crate::backends::openai::OpenAI::new(
-                        key,
+                        self.api_key,
                         self.proxy_url,
                         self.base_url,
                         self.model,
@@ -642,12 +639,8 @@ impl LLMBuilder {
 
                 #[cfg(feature = "elevenlabs")]
                 {
-                    let api_key = self.api_key.ok_or_else(|| {
-                        LLMError::InvalidRequest("No API key provided for ElevenLabs".to_string())
-                    })?;
-
                     let elevenlabs = crate::backends::elevenlabs::ElevenLabs::new(
-                        api_key,
+                        self.api_key,
                         self.proxy_url,
                         self.model.unwrap_or("eleven_multilingual_v2".to_string()),
                         "https://api.elevenlabs.io/v1".to_string(),
@@ -665,12 +658,8 @@ impl LLMBuilder {
 
                 #[cfg(feature = "anthropic")]
                 {
-                    let api_key = self.api_key.ok_or_else(|| {
-                        LLMError::InvalidRequest("No API key provided for Anthropic".to_string())
-                    })?;
-
                     let anthro = crate::backends::anthropic::Anthropic::new(
-                        api_key,
+                        self.api_key,
                         self.proxy_url,
                         self.model,
                         self.max_tokens,
@@ -726,12 +715,8 @@ impl LLMBuilder {
 
                 #[cfg(feature = "deepseek")]
                 {
-                    let api_key = self.api_key.ok_or_else(|| {
-                        LLMError::InvalidRequest("No API key provided for DeepSeek".to_string())
-                    })?;
-
                     let deepseek = crate::backends::deepseek::DeepSeek::new(
-                        api_key,
+                        self.api_key,
                         self.proxy_url,
                         self.model,
                         self.max_tokens,
@@ -752,12 +737,8 @@ impl LLMBuilder {
 
                 #[cfg(feature = "xai")]
                 {
-                    let api_key = self.api_key.ok_or_else(|| {
-                        LLMError::InvalidRequest("No API key provided for XAI".to_string())
-                    })?;
-
                     let xai = crate::backends::xai::XAI::new(
-                        api_key,
+                        self.api_key,
                         self.proxy_url,
                         self.model,
                         self.max_tokens,
@@ -810,12 +791,8 @@ impl LLMBuilder {
 
                 #[cfg(feature = "google")]
                 {
-                    let api_key = self.api_key.ok_or_else(|| {
-                        LLMError::InvalidRequest("No API key provided for Google".to_string())
-                    })?;
-
                     let google = crate::backends::google::Google::new(
-                        api_key,
+                        self.api_key,
                         self.proxy_url,
                         self.model,
                         self.max_tokens,
@@ -839,12 +816,8 @@ impl LLMBuilder {
 
                 #[cfg(feature = "groq")]
                 {
-                    let api_key = self.api_key.ok_or_else(|| {
-                        LLMError::InvalidRequest("No API key provided for Groq".to_string())
-                    })?;
-
                     let groq = crate::backends::groq::Groq::new(
-                        api_key,
+                        self.api_key,
                         self.proxy_url,
                         self.model,
                         self.max_tokens,
@@ -870,9 +843,7 @@ impl LLMBuilder {
                         LLMError::InvalidRequest("No API endpoint provided for Azure OpenAI".into())
                     })?;
 
-                    let key = self.api_key.ok_or_else(|| {
-                        LLMError::InvalidRequest("No API key provided for Azure OpenAI".to_string())
-                    })?;
+                    let key = self.api_key;
 
                     let api_version = self.api_version.ok_or_else(|| {
                         LLMError::InvalidRequest(
@@ -917,11 +888,8 @@ impl LLMBuilder {
 
                 #[cfg(feature = "cohere")]
                 {
-                    let key = self.api_key.ok_or_else(|| {
-                        LLMError::InvalidRequest("No API key provided for Cohere".to_string())
-                    })?;
                     Box::new(crate::backends::cohere::Cohere::new(
-                        key,
+                        self.api_key,
                         self.proxy_url,
                         self.base_url,
                         self.model,
