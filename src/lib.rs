@@ -92,6 +92,10 @@ pub trait LLMProvider:
     fn tools(&self) -> Option<&[Tool]> {
         None
     }
+
+    fn relogin_github_copilot(&self) -> Result<(), crate::error::LLMError> {
+        Err(crate::error::LLMError::ProviderError("This provider does not support GitHub Copilot re-login.".to_string()))
+    }
 }
 
 /// Helper function to provide a default value for `call_type`.

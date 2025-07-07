@@ -424,4 +424,13 @@ impl LLMProvider for Copilot {
     fn tools(&self) -> Option<&[Tool]> {
         self.tools.as_deref()
     }
+
+    fn relogin_github_copilot(&self) -> Result<(), crate::error::LLMError> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(
+                self.interactive_github_auth(&self.client)
+            )
+        })?;
+        Ok(())
+    }
 }
