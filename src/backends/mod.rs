@@ -30,3 +30,6 @@ pub mod elevenlabs;
 
 #[cfg(feature = "cohere")]
 pub mod cohere;
+
+#[cfg(feature = "copilot")]
+pub mod copilot;

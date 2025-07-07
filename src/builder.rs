@@ -45,6 +45,8 @@ pub enum LLMBackend {
     ElevenLabs,
     /// Cohere API provider
     Cohere,
+    /// GitHub Copilot API provider
+    Copilot,
 }
 
 /// Implements string parsing for LLMBackend enum.
@@ -89,6 +91,7 @@ impl std::str::FromStr for LLMBackend {
             "azure-openai" => Ok(LLMBackend::AzureOpenAI),
             "elevenlabs" => Ok(LLMBackend::ElevenLabs),
             "cohere" => Ok(LLMBackend::Cohere),
+            "copilot" => Ok(LLMBackend::Copilot),
             _ => Err(LLMError::InvalidRequest(format!(
                 "Unknown LLM backend: {s}"
             ))),
@@ -928,6 +931,23 @@ impl LLMBuilder {
                         self.reasoning_effort,
                         self.json_schema,
                     ))
+                }
+            }
+            LLMBackend::Copilot => {
+                #[cfg(not(feature = "copilot"))]
+                return Err(LLMError::InvalidRequest(
+                    "Copilot feature not enabled".to_string(),
+                ));
+
+                #[cfg(feature = "copilot")]
+                {
+                    Box::new(crate::backends::copilot::Copilot::new(
+                        self.api_key, // This is the GitHub token
+                        self.proxy_url,
+                        self.model,
+                        self.temperature,
+                        self.timeout_seconds,
+                    )?)
                 }
             }
         };

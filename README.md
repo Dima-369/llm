@@ -5,6 +5,7 @@
 - added total used tokens to `google.rs`, `openai.rs` and `cohere.rs` backends
 - added `TooManyRequests(String)` to `pub enum LLMError` for all backends
 - add Cohere backend
+- add GitHub Copilot backend
 
 # LLM
 

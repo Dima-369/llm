@@ -158,11 +158,18 @@ fn get_api_key(backend: &LLMBackend, args: &CliArgs) -> Option<String> {
                 .or_else(|| std::env::var("AZURE_OPENAI_API_KEY").ok()),
             LLMBackend::Ollama => None,
             LLMBackend::Phind => None,
-            LLMBackend::ElevenLabs => None,
+            LLMBackend::ElevenLabs => store
+                .get("ELEVENLABS_API_KEY")
+                .cloned()
+                .or_else(|| std::env::var("ELEVENLABS_API_KEY").ok()),
             LLMBackend::Cohere => store
                 .get("COHERE_API_KEY")
                 .cloned()
                 .or_else(|| std::env::var("COHERE_API_KEY").ok()),
+            LLMBackend::Copilot => store
+                .get("COPILOT_GITHUB_TOKEN")
+                .cloned()
+                .or_else(|| std::env::var("COPILOT_GITHUB_TOKEN").ok()),
         }
     })
 }

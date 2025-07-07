@@ -27,6 +27,7 @@ full = [
     "google",
     "groq",
     "azure_openai",
+    "copilot",
     "api",
     "elevenlabs",
     "agent",
@@ -42,6 +43,7 @@ google = []
 groq = []
 azure_openai = []
 cohere = []
+copilot = ["dep:open"]
 cli = ["full", "dep:clap", "dep:rustyline", "dep:colored", "dep:spinners"]
 api = ["dep:axum", "dep:tower-http", "dep:uuid"]
 elevenlabs = []
@@ -71,7 +73,8 @@ rodio = { version = "0.20.0", features = ["mp3", "wav"], optional = true }
 regex = "1.10"
 log = "0.4"
 env_logger = { version = "0.11", optional = true }
-chrono = {version = "0.4", default-features = false, features = ["serde"]}
+open = { version = "5", optional = true }
+chrono = {version = "0.4", default-features = false, features = ["serde", "clock"]}
 
 [[bin]]
 name = "llm"

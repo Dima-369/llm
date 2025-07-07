@@ -290,8 +290,8 @@ impl Anthropic {
         }
         Self {
             api_key: api_key.into(),
-            model: model.unwrap_or_else(|| "claude-3-sonnet-20240229".to_string()),
-            max_tokens: max_tokens.unwrap_or(300),
+            model: model.unwrap_or_else(|| "claude-3.5-sonnet-20240620".to_string()),
+            max_tokens: max_tokens.unwrap_or(4096),
             temperature: temperature.unwrap_or(0.7),
             system: system.unwrap_or_else(|| "You are a helpful assistant.".to_string()),
             timeout_seconds: timeout_seconds.unwrap_or(30),
