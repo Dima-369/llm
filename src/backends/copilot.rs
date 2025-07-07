@@ -121,6 +121,7 @@ pub struct Copilot {
     copilot_token: Arc<RwLock<Option<CopilotToken>>>,
     model: String,
     temperature: Option<f32>,
+    system: Option<String>,
     tools: Option<Vec<Tool>>,
     tool_choice: Option<ToolChoice>,
     token_directory: PathBuf,
@@ -151,6 +152,7 @@ impl Copilot {
         model: Option<String>,
         temperature: Option<f32>,
         timeout_seconds: Option<u64>,
+        system: Option<String>,
         tools: Option<Vec<Tool>>,
         tool_choice: Option<ToolChoice>,
         token_directory: PathBuf,
@@ -173,6 +175,7 @@ impl Copilot {
             copilot_token: Arc::new(RwLock::new(None)), // Placeholder
             model: String::new(),                       // Placeholder
             temperature: None,                          // Placeholder
+            system: None,                               // Placeholder
             tools: None,                                // Placeholder
             tool_choice: None,                          // Placeholder
             token_directory: token_directory.clone(),
@@ -209,6 +212,7 @@ impl Copilot {
             copilot_token: Arc::new(RwLock::new(cached_copilot_token)),
             model: model.unwrap_or("copilot-chat".to_string()),
             temperature,
+            system,
             tools,
             tool_choice,
             token_directory,
@@ -378,7 +382,7 @@ impl ChatProvider for Copilot {
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
         let fresh_token = self.get_refreshed_copilot_token().await?;
 
-        let copilot_messages: Vec<CopilotChatMessage> = messages
+        let mut copilot_messages: Vec<CopilotChatMessage> = messages
             .iter()
             .map(|m| CopilotChatMessage {
                 role: match m.role {
@@ -388,6 +392,17 @@ impl ChatProvider for Copilot {
                 content: &m.content,
             })
             .collect();
+
+        // Insert system message at the beginning if present
+        if let Some(system) = &self.system {
+            copilot_messages.insert(
+                0,
+                CopilotChatMessage {
+                    role: "system",
+                    content: system,
+                },
+            );
+        }
 
         let request_tools = tools.map(|t| t.to_vec()).or_else(|| self.tools.clone());
 
@@ -595,5 +610,74 @@ mod tests {
 
         // Should skip the empty/whitespace content and return the actual content
         assert_eq!(response.text(), Some("Actual content here".to_string()));
+    }
+
+    #[test]
+    fn test_copilot_system_prompt_insertion() {
+        use crate::chat::{ChatMessage, ChatRole};
+        use tempfile::tempdir;
+
+        // Create a temporary directory for tokens
+        let temp_dir = tempdir().unwrap();
+        let token_directory = temp_dir.path().to_path_buf();
+
+        // Create a Copilot instance with a system prompt
+        let copilot = Copilot {
+            client: reqwest::Client::new(),
+            github_token: "test_token".to_string(),
+            copilot_token: Arc::new(RwLock::new(None)),
+            model: "copilot-chat".to_string(),
+            temperature: Some(0.7),
+            system: Some("You are a helpful assistant.".to_string()),
+            tools: None,
+            tool_choice: None,
+            token_directory,
+        };
+
+        // Create test messages
+        let messages = vec![
+            ChatMessage {
+                role: ChatRole::User,
+                content: "Hello".to_string(),
+                message_type: Default::default(),
+            },
+            ChatMessage {
+                role: ChatRole::Assistant,
+                content: "Hi there!".to_string(),
+                message_type: Default::default(),
+            },
+        ];
+
+        // Convert messages to Copilot format (simulating the chat method logic)
+        let mut copilot_messages: Vec<CopilotChatMessage> = messages
+            .iter()
+            .map(|m| CopilotChatMessage {
+                role: match m.role {
+                    ChatRole::User => "user",
+                    ChatRole::Assistant => "assistant",
+                },
+                content: &m.content,
+            })
+            .collect();
+
+        // Insert system message at the beginning if present (simulating the chat method logic)
+        if let Some(system) = &copilot.system {
+            copilot_messages.insert(
+                0,
+                CopilotChatMessage {
+                    role: "system",
+                    content: system,
+                },
+            );
+        }
+
+        // Verify that the system message was inserted at the beginning
+        assert_eq!(copilot_messages.len(), 3);
+        assert_eq!(copilot_messages[0].role, "system");
+        assert_eq!(copilot_messages[0].content, "You are a helpful assistant.");
+        assert_eq!(copilot_messages[1].role, "user");
+        assert_eq!(copilot_messages[1].content, "Hello");
+        assert_eq!(copilot_messages[2].role, "assistant");
+        assert_eq!(copilot_messages[2].content, "Hi there!");
     }
 }

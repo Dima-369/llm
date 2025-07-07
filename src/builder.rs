@@ -939,6 +939,7 @@ impl LLMBuilder {
                         self.model,
                         self.temperature,
                         self.timeout_seconds,
+                        self.system,
                         tools,
                         tool_choice,
                         token_directory,
