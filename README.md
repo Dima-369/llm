@@ -6,6 +6,7 @@
 - added `TooManyRequests(String)` to `pub enum LLMError` for all backends
 - add Cohere backend
 - add GitHub Copilot backend
+- allow an empty `api_key` in the `LLMBuilder` - then the Authorization header is not set
 
 # LLM
 
