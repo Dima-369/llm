@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 //! This example demonstrates how to use the Copilot provider.
 //!
 //! To run this example, you need to have a GitHub token with Copilot access.
@@ -9,6 +11,7 @@
 
 use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
+use tempfile::tempdir;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,13 +22,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // and uncomment the line below.
     // let _ = env_logger::try_init();
 
-    let user_message = "Write a short story about a robot who discovers music.";
+    let user_message = "say hi";
 
     // Create a new LLM provider with the Copilot backend.
     // If the `COPILOT_GITHUB_TOKEN` environment variable is not set,
     // an interactive device authentication flow will be initiated.
+    let temp_dir = tempdir()?;
     let provider = LLMBuilder::new()
         .backend(LLMBackend::Copilot)
+        .github_copilot_token_directory(temp_dir.path().to_str().ok_or("Failed to convert path to string")?)
         .build()?;
 
     let messages = vec![ChatMessage::user().content(user_message.to_string()).build()];
