@@ -5,7 +5,7 @@
 //! for obtaining a GitHub token, and subsequent fetching of a short-lived Copilot token.
 //! Tokens are cached locally in `~/.llm/`.
 
-use crate::{
+use crate::{chat::{Tool, ToolChoice},
     chat::{ChatMessage, ChatProvider, ChatResponse, ChatRole},
     completion::{CompletionProvider, CompletionRequest, CompletionResponse},
     embedding::EmbeddingProvider,
@@ -66,6 +66,10 @@ struct CopilotChatRequest<'a> {
     messages: Vec<CopilotChatMessage<'a>>,
     stream: bool,
     temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<Tool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_choice: Option<ToolChoice>,
 }
 
 #[derive(Serialize)]
@@ -87,6 +91,7 @@ struct CopilotChatChoice {
 #[derive(Deserialize, Debug)]
 struct CopilotChatMsg {
     content: Option<String>,
+    tool_calls: Option<Vec<ToolCall>>,
 }
 
 impl std::fmt::Display for CopilotChatResponse {
@@ -101,7 +106,7 @@ impl ChatResponse for CopilotChatResponse {
     }
 
     fn tool_calls(&self) -> Option<Vec<ToolCall>> {
-        None
+        self.choices.first().and_then(|c| c.message.tool_calls.clone())
     }
 }
 
@@ -114,6 +119,8 @@ pub struct Copilot {
     copilot_token: Arc<RwLock<Option<CopilotToken>>>,
     model: String,
     temperature: Option<f32>,
+    tools: Option<Vec<Tool>>,
+    tool_choice: Option<ToolChoice>,
 }
 
 impl Copilot {
@@ -126,6 +133,8 @@ impl Copilot {
         model: Option<String>,
         temperature: Option<f32>,
         timeout_seconds: Option<u64>,
+        tools: Option<Vec<Tool>>,
+        tool_choice: Option<ToolChoice>,
     ) -> Result<Self, LLMError> {
         let mut builder = Client::builder();
         if let Some(sec) = timeout_seconds {
@@ -169,6 +178,8 @@ impl Copilot {
             copilot_token: Arc::new(RwLock::new(cached_copilot_token)),
             model: model.unwrap_or("copilot-chat".to_string()),
             temperature,
+            tools,
+            tool_choice,
         })
     }
 
@@ -304,8 +315,16 @@ impl Copilot {
 #[async_trait]
 impl ChatProvider for Copilot {
     async fn chat(&self, messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
+        self.chat_with_tools(messages, None).await
+    }
+
+    async fn chat_with_tools(
+        &self,
+        messages: &[ChatMessage],
+        tools: Option<&[Tool]>,
+    ) -> Result<Box<dyn ChatResponse>, LLMError> {
         let fresh_token = self.get_refreshed_copilot_token().await?;
-        
+
         let copilot_messages: Vec<CopilotChatMessage> = messages
             .iter()
             .map(|m| CopilotChatMessage {
@@ -316,12 +335,22 @@ impl ChatProvider for Copilot {
                 content: &m.content,
             })
             .collect();
-        
+
+        let request_tools = tools.map(|t| t.to_vec()).or_else(|| self.tools.clone());
+
+        let request_tool_choice = if request_tools.is_some() {
+            self.tool_choice.clone()
+        } else {
+            None
+        };
+
         let body = CopilotChatRequest {
             model: &self.model,
             messages: copilot_messages,
             stream: false,
             temperature: self.temperature,
+            tools: request_tools,
+            tool_choice: request_tool_choice,
         };
 
         let response = self.client
@@ -346,15 +375,6 @@ impl ChatProvider for Copilot {
             message: e.to_string(),
             raw_response: "Failed to parse CopilotChatResponse".into()
         }).map(|r| Box::new(r) as Box<dyn ChatResponse>)
-    }
-
-    async fn chat_with_tools(
-        &self,
-        messages: &[ChatMessage],
-        _tools: Option<&[crate::chat::Tool]>,
-    ) -> Result<Box<dyn ChatResponse>, LLMError> {
-        // Copilot does not support tools in the same way as OpenAI.
-        self.chat(messages).await
     }
 }
 
@@ -388,4 +408,8 @@ impl TextToSpeechProvider for Copilot {
 
 #[async_trait]
 impl ModelsProvider for Copilot {}
-impl LLMProvider for Copilot {}
+impl LLMProvider for Copilot {
+    fn tools(&self) -> Option<&[Tool]> {
+        self.tools.as_deref()
+    }
+}

@@ -947,6 +947,8 @@ impl LLMBuilder {
                         self.model,
                         self.temperature,
                         self.timeout_seconds,
+                        tools,
+                        tool_choice,
                     )?)
                 }
             }
