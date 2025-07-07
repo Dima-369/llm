@@ -335,6 +335,7 @@ impl OpenAI {
     /// * `tool_choice` - Determines how the model uses tools
     /// * `reasoning_effort` - Reasoning effort level
     /// * `json_schema` - JSON schema for structured output
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,

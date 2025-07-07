@@ -130,6 +130,7 @@ impl Copilot {
     /// Creates a new Copilot client.
     /// If a GitHub token is not provided, it will attempt to load one from the cache,
     /// or initiate an interactive device authentication flow.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         github_token: Option<String>,
         proxy_url: Option<String>,

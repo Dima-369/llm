@@ -83,6 +83,7 @@ impl ChatResponse for DeepSeekChatResponse {
 }
 
 impl DeepSeek {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,
