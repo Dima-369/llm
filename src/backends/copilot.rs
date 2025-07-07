@@ -88,13 +88,27 @@ impl std::fmt::Display for CopilotChatResponse {
 
 impl ChatResponse for CopilotChatResponse {
     fn text(&self) -> Option<String> {
-        self.choices.first().and_then(|c| c.message.content.clone())
+        // Look for content in any choice, prioritizing the first one with content
+        for choice in &self.choices {
+            if let Some(content) = &choice.message.content {
+                if !content.trim().is_empty() {
+                    return Some(content.clone());
+                }
+            }
+        }
+        None
     }
 
     fn tool_calls(&self) -> Option<Vec<ToolCall>> {
-        self.choices
-            .first()
-            .and_then(|c| c.message.tool_calls.clone())
+        // Look for tool calls in any choice
+        for choice in &self.choices {
+            if let Some(tool_calls) = &choice.message.tool_calls {
+                if !tool_calls.is_empty() {
+                    return Some(tool_calls.clone());
+                }
+            }
+        }
+        None
     }
 }
 
@@ -464,5 +478,122 @@ impl LLMProvider for Copilot {
             tokio::runtime::Handle::current().block_on(self.interactive_github_auth(&self.client))
         })?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_copilot_response_parsing_with_multiple_choices() {
+        // Test case based on the actual GitHub Copilot response structure
+        // where tool calls are in the second choice, not the first
+        let response_json = r#"{
+            "choices": [
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "content": "I'll search for and open any README files in the workspace.",
+                        "role": "assistant"
+                    }
+                },
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "arguments": "{\"command\":\"find . -iname \\\"readme*\\\"\"}",
+                                    "name": "bash"
+                                },
+                                "id": "tooluse_HTIc-tQBS8CEYLO6OdSPPA",
+                                "type": "function"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "created": 1751913371,
+            "id": "54f2dd85-f04b-45f4-86b1-e74b5e4a2615",
+            "usage": {
+                "completion_tokens": 73,
+                "prompt_tokens": 855,
+                "prompt_tokens_details": {
+                    "cached_tokens": 0
+                },
+                "total_tokens": 928
+            },
+            "model": "Claude Sonnet 3.5"
+        }"#;
+
+        let response: CopilotChatResponse = serde_json::from_str(response_json).unwrap();
+
+        // Test that we can extract the content from the first choice
+        assert_eq!(
+            response.text(),
+            Some("I'll search for and open any README files in the workspace.".to_string())
+        );
+
+        // Test that we can extract the tool calls from the second choice
+        let tool_calls = response.tool_calls().unwrap();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].id, "tooluse_HTIc-tQBS8CEYLO6OdSPPA");
+        assert_eq!(tool_calls[0].call_type, "function");
+        assert_eq!(tool_calls[0].function.name, "bash");
+        assert_eq!(
+            tool_calls[0].function.arguments,
+            r#"{"command":"find . -iname \"readme*\""}"#
+        );
+    }
+
+    #[test]
+    fn test_copilot_response_parsing_with_single_choice() {
+        // Test case for a normal response with content only
+        let response_json = r#"{
+            "choices": [
+                {
+                    "message": {
+                        "content": "Hello! How can I help you today?",
+                        "role": "assistant"
+                    }
+                }
+            ]
+        }"#;
+
+        let response: CopilotChatResponse = serde_json::from_str(response_json).unwrap();
+
+        assert_eq!(
+            response.text(),
+            Some("Hello! How can I help you today?".to_string())
+        );
+        assert!(response.tool_calls().is_none());
+    }
+
+    #[test]
+    fn test_copilot_response_parsing_with_empty_content() {
+        // Test case where content is empty or whitespace
+        let response_json = r#"{
+            "choices": [
+                {
+                    "message": {
+                        "content": "   ",
+                        "role": "assistant"
+                    }
+                },
+                {
+                    "message": {
+                        "content": "Actual content here",
+                        "role": "assistant"
+                    }
+                }
+            ]
+        }"#;
+
+        let response: CopilotChatResponse = serde_json::from_str(response_json).unwrap();
+
+        // Should skip the empty/whitespace content and return the actual content
+        assert_eq!(response.text(), Some("Actual content here".to_string()));
     }
 }
