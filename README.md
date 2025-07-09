@@ -8,6 +8,7 @@
 - add GitHub Copilot backend
 - allow an empty `api_key` in the `LLMBuilder` - then the Authorization header is not set
 - add `is_base_url_absolute` to the `LLMBuilder` to avoid appending `chat/completions` to the URL always, this is required for PollinationsAI
+- added `Together` provider based on `gpt4free`, does not need any API key
 
 # LLM
 

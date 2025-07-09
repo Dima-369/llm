@@ -10,6 +10,7 @@ pub mod ollama;
 #[cfg(feature = "deepseek")]
 pub mod deepseek;
 
+pub mod together;
 #[cfg(feature = "xai")]
 pub mod xai;
 
