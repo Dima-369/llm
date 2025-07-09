@@ -35,6 +35,7 @@ use serde_json::Value;
 pub struct OpenAI {
     pub api_key: Option<String>,
     pub base_url: Url,
+    pub is_base_url_absolute: bool,
     pub model: String,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
@@ -340,6 +341,7 @@ impl OpenAI {
         api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,
         base_url: Option<String>,
+        is_base_url_absolute: bool,
         model: Option<String>,
         max_tokens: Option<u32>,
         temperature: Option<f32>,
@@ -376,6 +378,7 @@ impl OpenAI {
                 &base_url.unwrap_or_else(|| "https://api.openai.com/v1/".to_owned()),
             )
             .expect("Failed to prase base Url"),
+            is_base_url_absolute,
             model: model.unwrap_or("gpt-3.5-turbo".to_string()),
             max_tokens,
             temperature,
@@ -518,10 +521,13 @@ impl ChatProvider for OpenAI {
             web_search_options,
         };
 
-        let url = self
-            .base_url
-            .join("chat/completions")
-            .map_err(|e| LLMError::HttpError(e.to_string()))?;
+        let url = if self.is_base_url_absolute {
+            self.base_url.clone()
+        } else {
+            self.base_url
+                .join("chat/completions")
+                .map_err(|e| LLMError::HttpError(e.to_string()))?
+        };
 
         let mut request = self.client.post(url);
         if let Some(api_key) = &self.api_key {
@@ -640,10 +646,13 @@ impl ChatProvider for OpenAI {
             web_search_options: None,
         };
 
-        let url = self
-            .base_url
-            .join("chat/completions")
-            .map_err(|e| LLMError::HttpError(e.to_string()))?;
+        let url = if self.is_base_url_absolute {
+            self.base_url.clone()
+        } else {
+            self.base_url
+                .join("chat/completions")
+                .map_err(|e| LLMError::HttpError(e.to_string()))?
+        };
 
         let mut request = self.client.post(url);
         if let Some(api_key) = &self.api_key {

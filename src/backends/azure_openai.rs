@@ -30,6 +30,7 @@ pub struct AzureOpenAI {
     pub api_key: Option<String>,
     pub api_version: String,
     pub base_url: Url,
+    pub is_base_url_absolute: bool,
     pub model: String,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
@@ -339,6 +340,7 @@ impl AzureOpenAI {
         api_version: impl Into<String>,
         deployment_id: impl Into<String>,
         endpoint: impl Into<String>,
+        is_base_url_absolute: bool,
         model: Option<String>,
         max_tokens: Option<u32>,
         temperature: Option<f32>,
@@ -371,6 +373,7 @@ impl AzureOpenAI {
             api_version: api_version.into(),
             base_url: Url::parse(&format!("{endpoint}/openai/deployments/{deployment_id}/"))
                 .expect("Failed to parse base Url"),
+            is_base_url_absolute,
             model: model.unwrap_or("gpt-3.5-turbo".to_string()),
             max_tokens,
             temperature,
@@ -475,10 +478,13 @@ impl ChatProvider for AzureOpenAI {
             }
         }
 
-        let mut url = self
-            .base_url
-            .join("chat/completions")
-            .map_err(|e| LLMError::HttpError(e.to_string()))?;
+        let mut url = if self.is_base_url_absolute {
+            self.base_url.clone()
+        } else {
+            self.base_url
+                .join("chat/completions")
+                .map_err(|e| LLMError::HttpError(e.to_string()))?
+        };
 
         url.query_pairs_mut()
             .append_pair("api-version", &self.api_version);

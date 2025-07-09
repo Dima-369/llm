@@ -32,6 +32,7 @@ use serde_json::Value;
 pub struct Cohere {
     pub api_key: Option<String>,
     pub base_url: Url,
+    pub is_base_url_absolute: bool,
     pub model: String,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
@@ -313,6 +314,7 @@ impl Cohere {
         api_key: Option<impl Into<String>>,
         proxy_url: Option<String>,
         base_url: Option<String>,
+        is_base_url_absolute: bool,
         model: Option<String>,
         max_tokens: Option<u32>,
         temperature: Option<f32>,
@@ -342,6 +344,7 @@ impl Cohere {
                 &base_url.unwrap_or_else(|| "https://api.cohere.ai/compatibility/v1/".to_owned()),
             )
             .expect("Failed to prase base Url"),
+            is_base_url_absolute,
             model: model.unwrap_or("command-r-plus".to_string()),
             max_tokens,
             temperature,
@@ -443,10 +446,13 @@ impl ChatProvider for Cohere {
             response_format,
         };
 
-        let url = self
-            .base_url
-            .join("chat/completions")
-            .map_err(|e| LLMError::HttpError(e.to_string()))?;
+        let url = if self.is_base_url_absolute {
+            self.base_url.clone()
+        } else {
+            self.base_url
+                .join("chat/completions")
+                .map_err(|e| LLMError::HttpError(e.to_string()))?
+        };
 
         let mut request = self.client.post(url);
         if let Some(api_key) = &self.api_key {
@@ -564,10 +570,13 @@ impl ChatProvider for Cohere {
             response_format: None,
         };
 
-        let url = self
-            .base_url
-            .join("chat/completions")
-            .map_err(|e| LLMError::HttpError(e.to_string()))?;
+        let url = if self.is_base_url_absolute {
+            self.base_url.clone()
+        } else {
+            self.base_url
+                .join("chat/completions")
+                .map_err(|e| LLMError::HttpError(e.to_string()))?
+        };
 
         let mut request = self.client.post(url);
         if let Some(api_key) = &self.api_key {

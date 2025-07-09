@@ -114,6 +114,8 @@ pub struct LLMBuilder {
     api_key: Option<String>,
     /// Base URL for API requests (primarily for self-hosted instances)
     base_url: Option<String>,
+    /// If true, the base_url is used as is, without appending any suffixes.
+    is_base_url_absolute: bool,
     /// Model identifier/name to use
     model: Option<String>,
     /// Maximum tokens to generate in responses
@@ -192,6 +194,7 @@ impl LLMBuilder {
     /// Creates a new empty builder instance with default values.
     pub fn new() -> Self {
         Self {
+            is_base_url_absolute: false,
             ..Default::default()
         }
     }
@@ -217,6 +220,12 @@ impl LLMBuilder {
     /// Sets the base URL for API requests.
     pub fn base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = Some(url.into());
+        self
+    }
+
+    /// Sets the base URL for API requests.
+    pub fn is_base_url_absolute(mut self, is_absolute: bool) -> Self {
+        self.is_base_url_absolute = is_absolute;
         self
     }
 
@@ -618,6 +627,7 @@ impl LLMBuilder {
                         self.api_key,
                         self.proxy_url,
                         self.base_url,
+                        self.is_base_url_absolute,
                         self.model,
                         self.max_tokens,
                         self.temperature,
@@ -874,6 +884,7 @@ impl LLMBuilder {
                         api_version,
                         deployment,
                         endpoint,
+                        self.is_base_url_absolute,
                         self.model,
                         self.max_tokens,
                         self.temperature,
@@ -903,6 +914,7 @@ impl LLMBuilder {
                         self.api_key,
                         self.proxy_url,
                         self.base_url,
+                        self.is_base_url_absolute,
                         self.model,
                         self.max_tokens,
                         self.temperature,
