@@ -17,7 +17,7 @@ use crate::{
     LLMProvider, ToolCall,
 };
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Local, TimeZone, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -349,6 +349,62 @@ impl Copilot {
             })
     }
 
+    /// Fetches GitHub Copilot usage information from the API.
+    async fn fetch_copilot_usage(&self) -> Result<crate::CopilotUsageInfo, LLMError> {
+        let response = self
+            .client
+            .get("https://api.github.com/copilot_internal/v2/token")
+            .header("authorization", format!("token {}", self.github_token))
+            .header("accept", "application/json")
+            .header("editor-version", EDITOR_VERSION)
+            .header("editor-plugin-version", EDITOR_PLUGIN_VERSION)
+            .header("user-agent", EDITOR_PLUGIN_VERSION)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let response_text = response.text().await?;
+
+        if !status.is_success() {
+            return Err(LLMError::AuthError(format!(
+                "Copilot usage request failed with status {status}: {response_text}"
+            )));
+        }
+
+        let response_json: serde_json::Value =
+            serde_json::from_str(&response_text).map_err(|e| LLMError::JsonError(e.to_string()))?;
+
+        let reset_date = response_json["limited_user_reset_date"]
+            .as_i64()
+            .unwrap_or_default();
+        let reset_date_local: DateTime<Local> = DateTime::from(
+            Utc.timestamp_opt(reset_date, 0)
+                .single()
+                .unwrap_or_default(),
+        );
+
+        let now = Local::now();
+        let duration = reset_date_local.signed_duration_since(now);
+        let hours_remaining = duration.num_hours();
+
+        let chat_left = response_json["limited_user_quotas"]["chat"]
+            .as_i64()
+            .unwrap_or_default();
+        let completions_left = response_json["limited_user_quotas"]["completions"]
+            .as_i64()
+            .unwrap_or_default();
+
+        Ok(crate::CopilotUsageInfo {
+            chat_messages_left_per_month: chat_left,
+            completions_left_per_month: completions_left,
+            reset_date: reset_date_local.format("%Y-%m-%d %H:%M:%S %Z").to_string(),
+            time_remaining: format!(
+                "{} days {} hours",
+                hours_remaining / 24,
+                hours_remaining % 24
+            ),
+        })
+    }
     // --- Token Caching ---
     fn load_github_token(&self) -> Result<String, LLMError> {
         let content = fs::read_to_string(self.github_token_file()?)
@@ -387,7 +443,7 @@ impl ChatProvider for Copilot {
         let fresh_token = self.get_refreshed_copilot_token().await?;
 
         let mut copilot_messages: Vec<CopilotChatMessage> = vec![];
-        
+
         for msg in messages {
             if let MessageType::ToolResult(ref results) = msg.message_type {
                 for result in results {
@@ -465,7 +521,6 @@ impl ChatProvider for Copilot {
     }
 }
 
-
 // Create an owned CopilotChatMessage that doesn't borrow from any temporary variables
 fn chat_message_to_copilot_message(chat_msg: &ChatMessage) -> CopilotChatMessage<'static> {
     CopilotChatMessage {
@@ -533,6 +588,12 @@ impl LLMProvider for Copilot {
             tokio::runtime::Handle::current().block_on(self.interactive_github_auth(&self.client))
         })?;
         Ok(())
+    }
+
+    fn get_github_copilot_usage(&self) -> Result<crate::CopilotUsageInfo, crate::error::LLMError> {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(self.fetch_copilot_usage())
+        })
     }
 }
 

@@ -1,13 +1,13 @@
 // Google streaming chat example demonstrating real-time token generation with a tool that opens a file
 use futures::StreamExt;
+use llm::chat::ParameterProperty;
 use llm::{
-    builder::{LLMBackend, LLMBuilder, FunctionBuilder, ParamBuilder},
+    builder::{FunctionBuilder, LLMBackend, LLMBuilder, ParamBuilder},
     chat::ChatMessage,
 };
-use std::io::{self, Write};
 use std::fs::File;
 use std::io::Read;
-use llm::chat::ParameterProperty;
+use std::io::{self, Write};
 
 fn open_files_tool() -> FunctionBuilder {
     FunctionBuilder::new("open_files")
@@ -45,11 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("Failed to build LLM (Google)");
 
     // Prepare conversation with a prompt that will generate a longer response
-    let messages = vec![ChatMessage::user()
-        .content(
-            "open readme",
-        )
-        .build()];
+    let messages = vec![ChatMessage::user().content("open readme").build()];
 
     println!("Starting streaming chat with Google...\n");
 

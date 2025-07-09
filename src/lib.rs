@@ -78,6 +78,15 @@ pub fn init_logging() {
     }
 }
 
+/// GitHub Copilot usage information
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CopilotUsageInfo {
+    pub chat_messages_left_per_month: i64,
+    pub completions_left_per_month: i64,
+    pub reset_date: String,
+    pub time_remaining: String,
+}
+
 /// Core trait that all LLM providers must implement, combining chat, completion
 /// and embedding capabilities into a unified interface
 pub trait LLMProvider:
@@ -95,6 +104,12 @@ pub trait LLMProvider:
     fn relogin_github_copilot(&self) -> Result<(), crate::error::LLMError> {
         Err(crate::error::LLMError::ProviderError(
             "This provider does not support GitHub Copilot re-login.".to_string(),
+        ))
+    }
+
+    fn get_github_copilot_usage(&self) -> Result<CopilotUsageInfo, crate::error::LLMError> {
+        Err(crate::error::LLMError::ProviderError(
+            "This provider does not support GitHub Copilot usage reporting.".to_string(),
         ))
     }
 }
