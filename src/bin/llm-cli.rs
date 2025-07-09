@@ -170,6 +170,7 @@ fn get_api_key(backend: &LLMBackend, args: &CliArgs) -> Option<String> {
                 .get("COPILOT_GITHUB_TOKEN")
                 .cloned()
                 .or_else(|| std::env::var("COPILOT_GITHUB_TOKEN").ok()),
+            LLMBackend::Together => None,
         }
     })
 }
