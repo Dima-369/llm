@@ -32,6 +32,7 @@ full = [
     "elevenlabs",
     "agent",
     "cohere",
+    "together",
 ]
 openai = []
 anthropic = []
@@ -44,6 +45,7 @@ groq = []
 azure_openai = []
 cohere = []
 copilot = ["dep:open"]
+together = []
 cli = ["full", "dep:clap", "dep:rustyline", "dep:colored", "dep:spinners"]
 api = ["dep:axum", "dep:tower-http", "dep:uuid"]
 elevenlabs = []

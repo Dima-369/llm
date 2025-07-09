@@ -48,6 +48,8 @@ pub enum LLMBackend {
     Cohere,
     /// GitHub Copilot API provider
     Copilot,
+    /// Together AI API provider
+    Together,
 }
 
 /// Implements string parsing for LLMBackend enum.
@@ -956,6 +958,24 @@ impl LLMBuilder {
                         tool_choice,
                         token_directory,
                     )?)
+                }
+            }
+            LLMBackend::Together => {
+                #[cfg(not(feature = "together"))]
+                return Err(LLMError::InvalidRequest(
+                    "Together feature not enabled".to_string(),
+                ));
+
+                #[cfg(feature = "together")]
+                {
+                    // The Together backend in the llm crate is designed to fetch its own API key
+                    // from an activation endpoint. It does not directly use the api_key from LLMBuilder.
+                    // We pass a dummy SecretStore for now.
+                    let secrets = crate::secret_store::SecretStore::new().unwrap();
+                    Box::new(crate::backends::together::Together::new(
+                        self.proxy_url,
+                        &secrets,
+                    ))
                 }
             }
         };
