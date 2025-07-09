@@ -332,7 +332,7 @@ impl Models {
                 secrets.get("ELEVENLABS_VOICE").map(|s| s.to_string()),
             ))),
             Models::Together => Ok(Box::new(crate::backends::together::Together::new(
-                self.clone(),
+                secrets.get("TOGETHER_PROXY_URL").map(|s| s.to_string()),
                 secrets,
             ))),
         }

@@ -1,16 +1,6 @@
-use crate::{
-    chat::{ChatMessage, ChatProvider, ChatResponse},
-    completion::{CompletionProvider, CompletionRequest, CompletionResponse},
-    embedding::EmbeddingProvider,
-    error::LLMError,
-    models::{Models, ModelsProvider},
-    secret_store::SecretStore,
-    stt::SpeechToTextProvider,
-    tts::TextToSpeechProvider,
-    LLMProvider, ToolCall,
-};
+use crate::{chat::{ChatMessage, ChatProvider, ChatResponse}, completion::{CompletionProvider, CompletionRequest, CompletionResponse}, embedding::EmbeddingProvider, error::LLMError, secret_store::SecretStore, stt::SpeechToTextProvider, tts::TextToSpeechProvider, LLMProvider, ToolCall, models::ModelsProvider,};
 use async_trait::async_trait;
-use reqwest::Proxy;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
@@ -19,28 +9,32 @@ use tokio::sync::Mutex;
 
 const ACTIVATION_ENDPOINT: &str = "https://www.codegeneration.ai/activate-v2";
 const CHAT_COMPLETIONS_ENDPOINT: &str = "https://api.together.xyz/v1/chat/completions";
+const DEFAULT_MODEL: &str = "deepseek-ai/DeepSeek-V3";
 
 #[derive(Debug, Clone)]
 pub struct Together {
     api_key: Arc<Mutex<String>>,
     client: reqwest::Client,
-    model: Models,
 }
 
 impl LLMProvider for Together {}
 
 impl Together {
-    pub fn new(model: Models, _secrets: &SecretStore) -> Self {
-        let client = reqwest::Client::builder()
-            .proxy(Proxy::all("http://localhost:9090").expect("Failed to create proxy"))
-            .danger_accept_invalid_certs(true)
+    pub fn new(proxy_url: Option<String>, _secrets: &SecretStore) -> Self {
+        let mut builder = reqwest::Client::builder();
+
+        if let Some(proxy_url) = proxy_url {
+            let proxy = reqwest::Proxy::all(&proxy_url).expect("Failed to create proxy");
+            builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
+        }
+
+        let client = builder
             .build()
             .expect("Failed to build client");
 
         Self {
             api_key: Arc::new(Mutex::new(String::new())),
             client,
-            model,
         }
     }
 
@@ -88,7 +82,7 @@ impl Together {
 impl CompletionProvider for Together {
     async fn complete(&self, request: &CompletionRequest) -> Result<CompletionResponse, LLMError> {
         let api_key = self.get_activation_key().await?;
-        let body = RequestBody::from((request, self));
+        let body = RequestBody::from(request);
 
         let res = self
             .client
@@ -197,17 +191,17 @@ struct RequestBody {
     max_tokens: Option<u32>,
 }
 
-impl From<(&CompletionRequest, &Together)> for RequestBody {
-    fn from((request, together_instance): (&CompletionRequest, &Together)) -> Self {
+impl From<&CompletionRequest> for RequestBody {
+    fn from(request: &CompletionRequest) -> Self {
         Self {
             messages: vec![Message {
                 role: "user".to_string(),
                 content: request.prompt.clone(),
             }],
-            model: together_instance.model.to_string(),
+            model: DEFAULT_MODEL.to_string(),
             stream: false,
             temperature: request.temperature,
-
+            
             max_tokens: request.max_tokens,
         }
     }
