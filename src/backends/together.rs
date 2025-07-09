@@ -1,4 +1,14 @@
-use crate::{chat::{ChatMessage, ChatProvider, ChatResponse}, completion::{CompletionProvider, CompletionRequest, CompletionResponse}, embedding::EmbeddingProvider, error::LLMError, secret_store::SecretStore, stt::SpeechToTextProvider, tts::TextToSpeechProvider, LLMProvider, ToolCall, models::ModelsProvider,};
+use crate::{
+    chat::{ChatMessage, ChatProvider, ChatResponse},
+    completion::{CompletionProvider, CompletionRequest, CompletionResponse},
+    embedding::EmbeddingProvider,
+    error::LLMError,
+    models::ModelsProvider,
+    secret_store::SecretStore,
+    stt::SpeechToTextProvider,
+    tts::TextToSpeechProvider,
+    LLMProvider, ToolCall,
+};
 use async_trait::async_trait;
 
 use serde::{Deserialize, Serialize};
@@ -28,9 +38,7 @@ impl Together {
             builder = builder.proxy(proxy).danger_accept_invalid_certs(true);
         }
 
-        let client = builder
-            .build()
-            .expect("Failed to build client");
+        let client = builder.build().expect("Failed to build client");
 
         Self {
             api_key: Arc::new(Mutex::new(String::new())),
@@ -60,13 +68,12 @@ impl Together {
 
         if !status.is_success() {
             return Err(LLMError::Generic(format!(
-                "Failed to get activation key: Status {} - {}",
-                status, body
+                "Failed to get activation key: Status {status} - {body}"
             )));
         }
 
         let json: Value = serde_json::from_str(&body).map_err(|e| {
-            LLMError::Generic(format!("Failed to parse activation key response: {}", e))
+            LLMError::Generic(format!("Failed to parse activation key response: {e}"))
         })?;
         let key = json["openAIParams"]["apiKey"]
             .as_str()
@@ -87,7 +94,7 @@ impl CompletionProvider for Together {
         let res = self
             .client
             .post(CHAT_COMPLETIONS_ENDPOINT)
-            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Authorization", format!("Bearer {api_key}"))
             .json(&body)
             .send()
             .await
@@ -100,15 +107,14 @@ impl CompletionProvider for Together {
                 .await
                 .map_err(|e| LLMError::Generic(e.to_string()))?;
             return Err(LLMError::Generic(format!(
-                "API call failed with status: {}, body: {}",
-                status, res_body
+                "API call failed with status: {status}, body: {res_body}"
             )));
         }
 
         let response_body: ResponseBody = res
             .json()
             .await
-            .map_err(|e| LLMError::Generic(format!("Failed to parse response body: {}", e)))?;
+            .map_err(|e| LLMError::Generic(format!("Failed to parse response body: {e}")))?;
 
         Ok(CompletionResponse::from(response_body))
     }
@@ -201,7 +207,7 @@ impl From<&CompletionRequest> for RequestBody {
             model: DEFAULT_MODEL.to_string(),
             stream: false,
             temperature: request.temperature,
-            
+
             max_tokens: request.max_tokens,
         }
     }
@@ -226,7 +232,7 @@ impl From<ResponseBody> for CompletionResponse {
     fn from(response: ResponseBody) -> Self {
         let text = response
             .choices
-            .get(0)
+            .first()
             .and_then(|c| c.message.content.clone())
             .unwrap_or_default();
         Self { text }

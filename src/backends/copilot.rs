@@ -736,7 +736,7 @@ mod tests {
         };
 
         // Create test messages
-        let messages = vec![
+        let messages = [
             ChatMessage {
                 role: ChatRole::User,
                 content: "Hello".to_string(),

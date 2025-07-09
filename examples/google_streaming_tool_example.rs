@@ -5,8 +5,6 @@ use llm::{
     builder::{FunctionBuilder, LLMBackend, LLMBuilder, ParamBuilder},
     chat::ChatMessage,
 };
-use std::fs::File;
-use std::io::Read;
 use std::io::{self, Write};
 
 fn open_files_tool() -> FunctionBuilder {
