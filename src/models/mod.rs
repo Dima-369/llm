@@ -334,6 +334,8 @@ impl Models {
             Models::Together => Ok(Box::new(crate::backends::together::Together::new(
                 secrets.get("TOGETHER_PROXY_URL").map(|s| s.to_string()),
                 secrets,
+                None,
+                None,
             ))),
         }
     }

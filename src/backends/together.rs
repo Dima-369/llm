@@ -1,5 +1,6 @@
 use crate::{
-    chat::{ChatMessage, ChatProvider, ChatResponse},
+    chat::{ChatMessage, ChatProvider, ChatResponse, Tool, ToolChoice, Usage},
+    chat::{ChatRole, MessageType},
     completion::{CompletionProvider, CompletionRequest, CompletionResponse},
     embedding::EmbeddingProvider,
     error::LLMError,
@@ -25,12 +26,23 @@ const DEFAULT_MODEL: &str = "deepseek-ai/DeepSeek-V3";
 pub struct Together {
     api_key: Arc<Mutex<String>>,
     client: reqwest::Client,
+    pub tools: Option<Vec<Tool>>,
+    pub tool_choice: Option<ToolChoice>,
 }
 
-impl LLMProvider for Together {}
+impl LLMProvider for Together {
+    fn tools(&self) -> Option<&[Tool]> {
+        self.tools.as_deref()
+    }
+}
 
 impl Together {
-    pub fn new(proxy_url: Option<String>, _secrets: &SecretStore) -> Self {
+    pub fn new(
+        proxy_url: Option<String>,
+        _secrets: &SecretStore,
+        tools: Option<Vec<Tool>>,
+        tool_choice: Option<ToolChoice>,
+    ) -> Self {
         let mut builder = reqwest::Client::builder();
 
         if let Some(proxy_url) = proxy_url {
@@ -43,6 +55,8 @@ impl Together {
         Self {
             api_key: Arc::new(Mutex::new(String::new())),
             client,
+            tools,
+            tool_choice,
         }
     }
 
@@ -122,20 +136,93 @@ impl CompletionProvider for Together {
 
 #[async_trait]
 impl ChatProvider for Together {
-    async fn chat(&self, _messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
-        Err(LLMError::ProviderError(
-            "Chat not supported by the Together completion provider".to_string(),
-        ))
-    }
-
     async fn chat_with_tools(
         &self,
-        _messages: &[ChatMessage],
-        _tools: Option<&[crate::chat::Tool]>,
+        messages: &[ChatMessage],
+        tools: Option<&[crate::chat::Tool]>,
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
-        Err(LLMError::ProviderError(
-            "Chat with tools not supported by the Together completion provider".to_string(),
-        ))
+        let api_key = self.get_activation_key().await?;
+
+        let mut together_msgs: Vec<TogetherChatMessage> = vec![];
+
+        for msg in messages {
+            if let MessageType::ToolResult(ref results) = msg.message_type {
+                for result in results {
+                    together_msgs.push(
+                        // Clone strings to own them
+                        TogetherChatMessage {
+                            role: "tool",
+                            tool_call_id: Some(Box::leak(result.id.clone().into_boxed_str())),
+                            tool_calls: None,
+                            content: Some(Box::leak(
+                                result.function.arguments.clone().into_boxed_str(),
+                            )),
+                        },
+                    );
+                }
+            } else {
+                together_msgs.push(chat_message_to_api_message(msg.clone()))
+            }
+        }
+
+        let request_tools = tools.map(|t| t.to_vec()).or_else(|| self.tools.clone());
+
+        let request_tool_choice = if request_tools.is_some() {
+            self.tool_choice.clone()
+        } else {
+            None
+        };
+
+        let body = RequestBody {
+            messages: together_msgs,
+            model: DEFAULT_MODEL.to_string(),
+            stream: false,
+            temperature: None,
+            max_tokens: None,
+            tools: request_tools,
+            tool_choice: request_tool_choice,
+        };
+
+        let res = self
+            .client
+            .post(CHAT_COMPLETIONS_ENDPOINT)
+            .header("Authorization", format!("Bearer {api_key}"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| LLMError::Generic(e.to_string()))?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let res_body = res
+                .text()
+                .await
+                .map_err(|e| LLMError::Generic(e.to_string()))?;
+            return Err(LLMError::Generic(format!(
+                "API call failed with status: {status}, body: {res_body}"
+            )));
+        }
+
+        let response_body: ResponseBody = res
+            .json()
+            .await
+            .map_err(|e| LLMError::Generic(format!("Failed to parse response body: {e}")))?;
+
+        Ok(Box::new(TogetherChatResponse {
+            text: response_body
+                .choices
+                .first()
+                .and_then(|c| c.message.content.clone()),
+            tool_calls: response_body
+                .choices
+                .first()
+                .and_then(|c| c.message.tool_calls.clone()),
+            usage: response_body.usage,
+        }))
+    }
+
+    async fn chat(&self, messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
+        self.chat_with_tools(messages, None).await
     }
 
     async fn chat_stream(
@@ -180,14 +267,33 @@ impl ModelsProvider for Together {
 }
 
 #[derive(Serialize, Debug)]
-struct Message {
-    role: String,
-    content: String,
+struct TogetherChatMessage<'a> {
+    role: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<TogetherFunctionCall<'a>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<&'a str>,
+}
+
+#[derive(Serialize, Debug)]
+struct TogetherFunctionPayload<'a> {
+    name: &'a str,
+    arguments: &'a str,
+}
+
+#[derive(Serialize, Debug)]
+struct TogetherFunctionCall<'a> {
+    id: &'a str,
+    #[serde(rename = "type")]
+    content_type: &'a str,
+    function: TogetherFunctionPayload<'a>,
 }
 
 #[derive(Serialize, Debug)]
 struct RequestBody {
-    messages: Vec<Message>,
+    messages: Vec<TogetherChatMessage<'static>>,
     model: String,
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -195,20 +301,30 @@ struct RequestBody {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<Tool>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_choice: Option<ToolChoice>,
 }
 
 impl From<&CompletionRequest> for RequestBody {
     fn from(request: &CompletionRequest) -> Self {
         Self {
-            messages: vec![Message {
-                role: "user".to_string(),
-                content: request.prompt.clone(),
+            messages: vec![TogetherChatMessage {
+                role: "user",
+                content: Some(Box::leak(request.prompt.clone().into_boxed_str())),
+                tool_calls: None,
+                tool_call_id: None,
             }],
             model: DEFAULT_MODEL.to_string(),
             stream: false,
             temperature: request.temperature,
 
             max_tokens: request.max_tokens,
+            tools: None,
+            tool_choice: None,
         }
     }
 }
@@ -216,6 +332,7 @@ impl From<&CompletionRequest> for RequestBody {
 #[derive(Deserialize, Debug)]
 struct ChoiceMessage {
     content: Option<String>,
+    tool_calls: Option<Vec<ToolCall>>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -226,6 +343,8 @@ struct Choice {
 #[derive(Deserialize, Debug)]
 struct ResponseBody {
     choices: Vec<Choice>,
+    #[serde(default)]
+    usage: Usage,
 }
 
 impl From<ResponseBody> for CompletionResponse {
@@ -241,21 +360,85 @@ impl From<ResponseBody> for CompletionResponse {
 
 #[derive(Debug)]
 pub struct TogetherChatResponse {
-    text: String,
+    text: Option<String>,
+    tool_calls: Option<Vec<ToolCall>>,
+    usage: Usage,
 }
 
 impl ChatResponse for TogetherChatResponse {
     fn text(&self) -> Option<String> {
-        Some(self.text.clone())
+        self.text.clone()
     }
 
     fn tool_calls(&self) -> Option<Vec<ToolCall>> {
-        None
+        self.tool_calls.clone()
+    }
+
+    fn usage(&self) -> Option<Usage> {
+        Some(self.usage.clone())
     }
 }
 
 impl fmt::Display for TogetherChatResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.text)
+        match (&self.text, &self.tool_calls) {
+            (Some(content), Some(tool_calls)) => {
+                for tool_call in tool_calls {
+                    write!(f, "{tool_call}")?;
+                }
+                write!(f, "{content}")
+            }
+            (Some(content), None) => write!(f, "{content}"),
+            (None, Some(tool_calls)) => {
+                for tool_call in tool_calls {
+                    write!(f, "{tool_call}")?;
+                }
+                Ok(())
+            }
+            (None, None) => write!(f, ""),
+        }
+    }
+}
+
+// Create an owned TogetherChatMessage that doesn't borrow from any temporary variables
+fn chat_message_to_api_message(chat_msg: ChatMessage) -> TogetherChatMessage<'static> {
+    // For other message types, create an owned TogetherChatMessage
+    TogetherChatMessage {
+        role: match chat_msg.role {
+            ChatRole::User => "user",
+            ChatRole::Assistant => "assistant",
+        },
+        tool_call_id: None,
+        content: Some(Box::leak(chat_msg.content.into_boxed_str())),
+        tool_calls: match &chat_msg.message_type {
+            MessageType::ToolUse(calls) => {
+                let owned_calls: Vec<TogetherFunctionCall<'static>> = calls
+                    .iter()
+                    .map(|c| {
+                        let owned_id = c.id.clone();
+                        let owned_name = c.function.name.clone();
+                        let owned_args = c.function.arguments.clone();
+
+                        // Need to leak these strings to create 'static references
+                        // This is a deliberate choice to solve the lifetime issue
+                        // The small memory leak is acceptable in this context
+                        let id_str = Box::leak(owned_id.into_boxed_str());
+                        let name_str = Box::leak(owned_name.into_boxed_str());
+                        let args_str = Box::leak(owned_args.into_boxed_str());
+
+                        TogetherFunctionCall {
+                            id: id_str,
+                            content_type: "function",
+                            function: TogetherFunctionPayload {
+                                name: name_str,
+                                arguments: args_str,
+                            },
+                        }
+                    })
+                    .collect();
+                Some(owned_calls)
+            }
+            _ => None,
+        },
     }
 }

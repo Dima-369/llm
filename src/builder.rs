@@ -975,6 +975,8 @@ impl LLMBuilder {
                     Box::new(crate::backends::together::Together::new(
                         self.proxy_url,
                         &secrets,
+                        tools,
+                        tool_choice,
                     ))
                 }
             }
