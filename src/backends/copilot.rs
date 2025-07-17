@@ -28,6 +28,25 @@ use std::{
 };
 use tokio::time::sleep;
 
+// Helper functions for clipboard and notifications
+fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut clipboard = arboard::Clipboard::new()?;
+    clipboard.set_text(text)?;
+    Ok(())
+}
+
+fn show_hammerspoon_alert(s: &str) {
+    use std::process::{Command, Stdio};
+    let _ = Command::new("hs")
+        .arg("-c")
+        .arg("hs.alert.show([===[".to_owned() +
+            s +
+            "]===],{ textStyle = { paragraphStyle = { alignment = \"center\" } } }, hs.screen.mainScreen(), 2)")
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn();
+}
+
 // --- Constants ---
 const GITHUB_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
 const EDITOR_VERSION: &str = "vscode/1.85.1";
@@ -246,6 +265,14 @@ impl Copilot {
         println!("\nFirst time use requires authentication with GitHub.");
         println!("Opened {verification_uri} in your browser.");
         println!("Please enter the following code: {user_code}");
+
+        // Copy the user code to clipboard
+        if let Err(e) = copy_to_clipboard(user_code) {
+            eprintln!("Warning: Failed to copy code to clipboard: {}", e);
+        }
+
+        // Show Hammerspoon notification
+        show_hammerspoon_alert(&format!("GitHub Copilot Auth\n\nCode copied to clipboard:\n{}", user_code));
 
         // Attempt to open in browser, but don't fail if it doesn't work.
         let _ = open::that(verification_uri);
@@ -587,6 +614,18 @@ impl LLMProvider for Copilot {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(self.interactive_github_auth(&self.client))
         })?;
+        
+        // Clear the cached Copilot token so a fresh one will be fetched for the new GitHub account
+        {
+            let mut write_lock = self.copilot_token.write().unwrap();
+            *write_lock = None;
+        }
+        
+        // Also remove the cached token file
+        if let Ok(token_file) = self.copilot_token_file() {
+            let _ = std::fs::remove_file(token_file);
+        }
+        
         Ok(())
     }
 
