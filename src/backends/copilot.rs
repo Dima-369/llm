@@ -6,7 +6,7 @@
 //! Tokens are cached locally in `~/.llm/`.
 
 use crate::{
-    chat::{ChatMessage, ChatProvider, ChatResponse, ChatRole, MessageType},
+    chat::{ChatMessage, ChatProvider, ChatResponse, ChatRole, MessageType, Usage},
     chat::{Tool, ToolChoice},
     completion::{CompletionProvider, CompletionRequest, CompletionResponse},
     embedding::EmbeddingProvider,
@@ -90,6 +90,8 @@ struct CopilotChatMessage<'a> {
 #[derive(Deserialize, Debug)]
 struct CopilotChatResponse {
     choices: Vec<CopilotChatChoice>,
+    #[serde(default)]
+    usage: Usage,
 }
 
 #[derive(Deserialize, Debug)]
@@ -132,6 +134,10 @@ impl ChatResponse for CopilotChatResponse {
             }
         }
         None
+    }
+
+    fn usage(&self) -> Option<Usage> {
+        Some(self.usage.clone())
     }
 }
 
