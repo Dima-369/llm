@@ -146,7 +146,7 @@ impl ChatResponse for CopilotChatResponse {
 /// Client for interacting with GitHub Copilot's API.
 pub struct Copilot {
     client: Client,
-    github_token: String,
+    github_token: Arc<RwLock<String>>,
     copilot_token: Arc<RwLock<Option<CopilotToken>>>,
     model: String,
     temperature: Option<f32>,
@@ -200,7 +200,7 @@ impl Copilot {
 
         let dummy_copilot = Self {
             client: client.clone(),
-            github_token: String::new(),                // Placeholder
+            github_token: Arc::new(RwLock::new(String::new())), // Placeholder
             copilot_token: Arc::new(RwLock::new(None)), // Placeholder
             model: String::new(),                       // Placeholder
             temperature: None,                          // Placeholder
@@ -237,7 +237,7 @@ impl Copilot {
 
         Ok(Self {
             client,
-            github_token: final_github_token,
+            github_token: Arc::new(RwLock::new(final_github_token)),
             copilot_token: Arc::new(RwLock::new(cached_copilot_token)),
             model: model.unwrap_or("copilot-chat".to_string()),
             temperature,
@@ -357,7 +357,10 @@ impl Copilot {
         let response = self
             .client
             .get("https://api.github.com/copilot_internal/v2/token")
-            .header("authorization", format!("token {}", self.github_token))
+            .header(
+                "authorization",
+                format!("token {}", self.github_token.read().unwrap().as_str()),
+            )
             .header("accept", "application/json")
             .header("editor-version", EDITOR_VERSION)
             .header("editor-plugin-version", EDITOR_PLUGIN_VERSION)
@@ -387,7 +390,10 @@ impl Copilot {
         let response = self
             .client
             .get("https://api.github.com/copilot_internal/v2/token")
-            .header("authorization", format!("token {}", self.github_token))
+            .header(
+                "authorization",
+                format!("token {}", self.github_token.read().unwrap().as_str()),
+            )
             .header("accept", "application/json")
             .header("editor-version", EDITOR_VERSION)
             .header("editor-plugin-version", EDITOR_PLUGIN_VERSION)
@@ -617,10 +623,17 @@ impl LLMProvider for Copilot {
     }
 
     fn relogin_github_copilot(&self) -> Result<(), crate::error::LLMError> {
-        tokio::task::block_in_place(|| {
+        // Run the interactive auth and capture the new GitHub access token
+        let new_token = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(self.interactive_github_auth(&self.client))
         })?;
-        
+
+        // Update in-memory GitHub token so subsequent calls use the new account immediately
+        {
+            let mut gh = self.github_token.write().unwrap();
+            *gh = new_token;
+        }
+
         // Clear the cached Copilot token so a fresh one will be fetched for the new GitHub account
         {
             let mut write_lock = self.copilot_token.write().unwrap();
@@ -770,7 +783,7 @@ mod tests {
         // Create a Copilot instance with a system prompt
         let copilot = Copilot {
             client: reqwest::Client::new(),
-            github_token: "test_token".to_string(),
+            github_token: Arc::new(RwLock::new("test_token".to_string())),
             copilot_token: Arc::new(RwLock::new(None)),
             model: "copilot-chat".to_string(),
             temperature: Some(0.7),
