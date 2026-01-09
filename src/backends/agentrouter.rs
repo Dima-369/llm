@@ -182,7 +182,14 @@ impl ChatProvider for AgentRouter {
             .client
             .post("https://agentrouter.org/v1/chat/completions")
             .header("Content-Type", "application/json")
-            .header("User-Agent", "claude-code/2.1.2 (darwin; arm64)");
+            .header("User-Agent", "RooCode/3.34.8")
+            .header("X-Title", "Roo Code")
+            .header("HTTP-Referer", "https://github.com/RooVetGit/Roo-Cline")
+            .header("X-Stainless-Runtime-Version", "v22.20.0")
+            .header("X-Stainless-Runtime", "node")
+            .header("X-Stainless-Arch", "x64")
+            .header("X-Stainless-OS", "Linux")
+            .header("X-Stainless-Lang", "js");
         if let Some(api_key) = &self.api_key {
             request = request.bearer_auth(api_key);
         }
@@ -262,7 +269,14 @@ impl ChatProvider for AgentRouter {
             .client
             .post("https://agentrouter.org/v1/chat/completions")
             .header("Content-Type", "application/json")
-            .header("User-Agent", "claude-code/2.1.2 (darwin; arm64)");
+            .header("User-Agent", "RooCode/3.34.8")
+            .header("X-Title", "Roo Code")
+            .header("HTTP-Referer", "https://github.com/RooVetGit/Roo-Cline")
+            .header("X-Stainless-Runtime-Version", "v22.20.0")
+            .header("X-Stainless-Runtime", "node")
+            .header("X-Stainless-Arch", "x64")
+            .header("X-Stainless-OS", "Linux")
+            .header("X-Stainless-Lang", "js");
         if let Some(api_key) = &self.api_key {
             request = request.bearer_auth(api_key);
         }
