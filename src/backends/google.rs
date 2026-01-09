@@ -123,23 +123,50 @@ struct GoogleChatContent<'a> {
     parts: Vec<GoogleContentPart<'a>>,
 }
 
-/// Text content within a chat message
+/// Content part within a chat message - uses untagged enum for flexible serialization
+#[derive(Serialize)]
+#[serde(untagged)]
+enum GoogleContentPart<'a> {
+    /// Text content
+    Text(GoogleTextPart<'a>),
+    /// Inline data (images, PDFs)
+    InlineData(GoogleInlineDataPart),
+    /// Function call with optional thought signature (for Gemini 3)
+    FunctionCall(GoogleFunctionCallPart),
+    /// Function response
+    FunctionResponse(GoogleFunctionResponsePart),
+}
+
+#[derive(Serialize)]
+struct GoogleTextPart<'a> {
+    text: &'a str,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-enum GoogleContentPart<'a> {
-    /// The actual text content
-    #[serde(rename = "text")]
-    Text(&'a str),
-    InlineData(GoogleInlineData),
-    FunctionCall(GoogleFunctionCall),
-    #[serde(rename = "functionResponse")]
-    FunctionResponse(GoogleFunctionResponse),
+struct GoogleInlineDataPart {
+    inline_data: GoogleInlineData,
 }
 
 #[derive(Serialize)]
 struct GoogleInlineData {
     mime_type: String,
     data: String,
+}
+
+/// Function call part with optional thought signature for Gemini 3
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleFunctionCallPart {
+    function_call: GoogleFunctionCall,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thought_signature: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleFunctionResponsePart {
+    function_response: GoogleFunctionResponse,
 }
 
 /// Configuration parameters for text generation
@@ -245,6 +272,7 @@ impl ChatResponse for GoogleChatResponse {
                             name: f.name.clone(),
                             arguments: serde_json::to_string(&f.args).unwrap_or_default(),
                         },
+                        thought_signature: part.thought_signature.clone(),
                     })
                 })
                 .collect();
@@ -254,6 +282,7 @@ impl ChatResponse for GoogleChatResponse {
             }
 
             // Otherwise check for function_calls/function_call at the content level (older format)
+            // Note: These don't support thought_signature as they're the older format
             if let Some(fc) = &c.content.function_calls {
                 // Process array of function calls
                 Some(
@@ -265,6 +294,7 @@ impl ChatResponse for GoogleChatResponse {
                                 name: f.name.clone(),
                                 arguments: serde_json::to_string(&f.args).unwrap_or_default(),
                             },
+                            thought_signature: None,
                         })
                         .collect(),
                 )
@@ -277,6 +307,7 @@ impl ChatResponse for GoogleChatResponse {
                             name: f.name.clone(),
                             arguments: serde_json::to_string(&f.args).unwrap_or_default(),
                         },
+                        thought_signature: None,
                     }]
                 })
             }
@@ -299,6 +330,9 @@ struct GoogleResponsePart {
     /// Function call contained in this part
     #[serde(rename = "functionCall")]
     function_call: Option<GoogleFunctionCall>,
+    /// Thought signature for Gemini 3 models (required for function calling)
+    #[serde(rename = "thoughtSignature")]
+    thought_signature: Option<String>,
 }
 
 /// MIME type of the response
@@ -522,7 +556,7 @@ impl ChatProvider for Google {
         if let Some(system) = &self.system {
             chat_contents.push(GoogleChatContent {
                 role: "user",
-                parts: vec![GoogleContentPart::Text(system)],
+                parts: vec![GoogleContentPart::Text(GoogleTextPart { text: system })],
             });
         }
 
@@ -540,27 +574,36 @@ impl ChatProvider for Google {
             chat_contents.push(GoogleChatContent {
                 role,
                 parts: match &msg.message_type {
-                    MessageType::Text => vec![GoogleContentPart::Text(&msg.content)],
+                    MessageType::Text => vec![GoogleContentPart::Text(GoogleTextPart {
+                        text: &msg.content,
+                    })],
                     MessageType::Image((image_mime, raw_bytes)) => {
-                        vec![GoogleContentPart::InlineData(GoogleInlineData {
-                            mime_type: image_mime.mime_type().to_string(),
-                            data: BASE64.encode(raw_bytes),
+                        vec![GoogleContentPart::InlineData(GoogleInlineDataPart {
+                            inline_data: GoogleInlineData {
+                                mime_type: image_mime.mime_type().to_string(),
+                                data: BASE64.encode(raw_bytes),
+                            },
                         })]
                     }
                     MessageType::ImageURL(_) => unimplemented!(),
                     MessageType::Pdf(raw_bytes) => {
-                        vec![GoogleContentPart::InlineData(GoogleInlineData {
-                            mime_type: "application/pdf".to_string(),
-                            data: BASE64.encode(raw_bytes),
+                        vec![GoogleContentPart::InlineData(GoogleInlineDataPart {
+                            inline_data: GoogleInlineData {
+                                mime_type: "application/pdf".to_string(),
+                                data: BASE64.encode(raw_bytes),
+                            },
                         })]
                     }
                     MessageType::ToolUse(calls) => calls
                         .iter()
                         .map(|call| {
-                            GoogleContentPart::FunctionCall(GoogleFunctionCall {
-                                name: call.function.name.clone(),
-                                args: serde_json::from_str(&call.function.arguments)
-                                    .unwrap_or(serde_json::Value::Null),
+                            GoogleContentPart::FunctionCall(GoogleFunctionCallPart {
+                                function_call: GoogleFunctionCall {
+                                    name: call.function.name.clone(),
+                                    args: serde_json::from_str(&call.function.arguments)
+                                        .unwrap_or(serde_json::Value::Null),
+                                },
+                                thought_signature: call.thought_signature.clone(),
                             })
                         })
                         .collect(),
@@ -571,11 +614,13 @@ impl ChatProvider for Google {
                                 serde_json::from_str::<Value>(&result.function.arguments)
                                     .unwrap_or(serde_json::Value::Null);
 
-                            GoogleContentPart::FunctionResponse(GoogleFunctionResponse {
-                                name: result.function.name.clone(),
-                                response: GoogleFunctionResponseContent {
+                            GoogleContentPart::FunctionResponse(GoogleFunctionResponsePart {
+                                function_response: GoogleFunctionResponse {
                                     name: result.function.name.clone(),
-                                    content: parsed_args,
+                                    response: GoogleFunctionResponseContent {
+                                        name: result.function.name.clone(),
+                                        content: parsed_args,
+                                    },
                                 },
                             })
                         })
@@ -700,7 +745,7 @@ impl ChatProvider for Google {
         if let Some(system) = &self.system {
             chat_contents.push(GoogleChatContent {
                 role: "user",
-                parts: vec![GoogleContentPart::Text(system)],
+                parts: vec![GoogleContentPart::Text(GoogleTextPart { text: system })],
             });
         }
 
@@ -718,27 +763,36 @@ impl ChatProvider for Google {
             chat_contents.push(GoogleChatContent {
                 role,
                 parts: match &msg.message_type {
-                    MessageType::Text => vec![GoogleContentPart::Text(&msg.content)],
+                    MessageType::Text => vec![GoogleContentPart::Text(GoogleTextPart {
+                        text: &msg.content,
+                    })],
                     MessageType::Image((image_mime, raw_bytes)) => {
-                        vec![GoogleContentPart::InlineData(GoogleInlineData {
-                            mime_type: image_mime.mime_type().to_string(),
-                            data: BASE64.encode(raw_bytes),
+                        vec![GoogleContentPart::InlineData(GoogleInlineDataPart {
+                            inline_data: GoogleInlineData {
+                                mime_type: image_mime.mime_type().to_string(),
+                                data: BASE64.encode(raw_bytes),
+                            },
                         })]
                     }
                     MessageType::ImageURL(_) => unimplemented!(),
                     MessageType::Pdf(raw_bytes) => {
-                        vec![GoogleContentPart::InlineData(GoogleInlineData {
-                            mime_type: "application/pdf".to_string(),
-                            data: BASE64.encode(raw_bytes),
+                        vec![GoogleContentPart::InlineData(GoogleInlineDataPart {
+                            inline_data: GoogleInlineData {
+                                mime_type: "application/pdf".to_string(),
+                                data: BASE64.encode(raw_bytes),
+                            },
                         })]
                     }
                     MessageType::ToolUse(calls) => calls
                         .iter()
                         .map(|call| {
-                            GoogleContentPart::FunctionCall(GoogleFunctionCall {
-                                name: call.function.name.clone(),
-                                args: serde_json::from_str(&call.function.arguments)
-                                    .unwrap_or(serde_json::Value::Null),
+                            GoogleContentPart::FunctionCall(GoogleFunctionCallPart {
+                                function_call: GoogleFunctionCall {
+                                    name: call.function.name.clone(),
+                                    args: serde_json::from_str(&call.function.arguments)
+                                        .unwrap_or(serde_json::Value::Null),
+                                },
+                                thought_signature: call.thought_signature.clone(),
                             })
                         })
                         .collect(),
@@ -749,11 +803,13 @@ impl ChatProvider for Google {
                                 serde_json::from_str::<Value>(&result.function.arguments)
                                     .unwrap_or(serde_json::Value::Null);
 
-                            GoogleContentPart::FunctionResponse(GoogleFunctionResponse {
-                                name: result.function.name.clone(),
-                                response: GoogleFunctionResponseContent {
+                            GoogleContentPart::FunctionResponse(GoogleFunctionResponsePart {
+                                function_response: GoogleFunctionResponse {
                                     name: result.function.name.clone(),
-                                    content: parsed_args,
+                                    response: GoogleFunctionResponseContent {
+                                        name: result.function.name.clone(),
+                                        content: parsed_args,
+                                    },
                                 },
                             })
                         })
@@ -876,7 +932,7 @@ impl ChatProvider for Google {
         if let Some(system) = &self.system {
             chat_contents.push(GoogleChatContent {
                 role: "user",
-                parts: vec![GoogleContentPart::Text(system)],
+                parts: vec![GoogleContentPart::Text(GoogleTextPart { text: system })],
             });
         }
 
@@ -889,20 +945,28 @@ impl ChatProvider for Google {
             chat_contents.push(GoogleChatContent {
                 role,
                 parts: match &msg.message_type {
-                    MessageType::Text => vec![GoogleContentPart::Text(&msg.content)],
+                    MessageType::Text => vec![GoogleContentPart::Text(GoogleTextPart {
+                        text: &msg.content,
+                    })],
                     MessageType::Image((image_mime, raw_bytes)) => {
-                        vec![GoogleContentPart::InlineData(GoogleInlineData {
-                            mime_type: image_mime.mime_type().to_string(),
-                            data: BASE64.encode(raw_bytes),
+                        vec![GoogleContentPart::InlineData(GoogleInlineDataPart {
+                            inline_data: GoogleInlineData {
+                                mime_type: image_mime.mime_type().to_string(),
+                                data: BASE64.encode(raw_bytes),
+                            },
                         })]
                     }
                     MessageType::Pdf(raw_bytes) => {
-                        vec![GoogleContentPart::InlineData(GoogleInlineData {
-                            mime_type: "application/pdf".to_string(),
-                            data: BASE64.encode(raw_bytes),
+                        vec![GoogleContentPart::InlineData(GoogleInlineDataPart {
+                            inline_data: GoogleInlineData {
+                                mime_type: "application/pdf".to_string(),
+                                data: BASE64.encode(raw_bytes),
+                            },
                         })]
                     }
-                    _ => vec![GoogleContentPart::Text(&msg.content)],
+                    _ => vec![GoogleContentPart::Text(GoogleTextPart {
+                        text: &msg.content,
+                    })],
                 },
             });
         }
@@ -999,7 +1063,7 @@ impl EmbeddingProvider for Google {
             let req_body = GoogleEmbeddingRequest {
                 model: "models/text-embedding-004",
                 content: GoogleEmbeddingContent {
-                    parts: vec![GoogleContentPart::Text(&text)],
+                    parts: vec![GoogleContentPart::Text(GoogleTextPart { text: &text })],
                 },
             };
 

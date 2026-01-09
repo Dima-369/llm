@@ -233,6 +233,7 @@ impl ChatResponse for AnthropicCompleteResponse {
                             )
                             .unwrap_or_default(),
                         },
+                        thought_signature: None,
                     })
                 } else {
                     None

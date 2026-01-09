@@ -604,6 +604,7 @@ mod tests {
                         name: "get_weather".to_string(),
                         arguments: r#"{"location": "Tokyo"}"#.to_string(),
                     },
+                    thought_signature: None,
                 }])
                 .build(),
             ChatMessage::user()
