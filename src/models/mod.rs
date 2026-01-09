@@ -18,6 +18,7 @@ pub enum Models {
     AzureOpenAI,
     ElevenLabs,
     Together,
+    AgentRouter,
 }
 
 impl Models {
@@ -336,6 +337,26 @@ impl Models {
                 secrets,
                 None,
                 None,
+            ))),
+            Models::AgentRouter => Ok(Box::new(crate::backends::agentrouter::AgentRouter::new(
+                secrets.get("AGENTROUTER_API_KEY").map(|s| s.to_string()),
+                secrets.get("AGENTROUTER_PROXY_URL").map(|s| s.to_string()),
+                secrets.get("AGENTROUTER_MODEL").map(|s| s.to_string()),
+                secrets
+                    .get("AGENTROUTER_MAX_TOKENS")
+                    .and_then(|s| s.parse().ok()),
+                secrets
+                    .get("AGENTROUTER_TEMPERATURE")
+                    .and_then(|s| s.parse().ok()),
+                secrets
+                    .get("AGENTROUTER_TIMEOUT_SECONDS")
+                    .and_then(|s| s.parse().ok()),
+                secrets.get("AGENTROUTER_SYSTEM").map(|s| s.to_string()),
+                Some(secrets.get("AGENTROUTER_STREAM").is_some()),
+                secrets.get("AGENTROUTER_TOP_P").and_then(|s| s.parse().ok()),
+                secrets.get("AGENTROUTER_TOP_K").and_then(|s| s.parse().ok()),
+                None, // tools
+                None, // tool_choice
             ))),
         }
     }

@@ -34,3 +34,6 @@ pub mod cohere;
 
 #[cfg(feature = "copilot")]
 pub mod copilot;
+
+#[cfg(feature = "agentrouter")]
+pub mod agentrouter;

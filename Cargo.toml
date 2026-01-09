@@ -33,6 +33,7 @@ full = [
     "agent",
     "cohere",
     "together",
+    "agentrouter",
 ]
 openai = []
 anthropic = []
@@ -52,6 +53,7 @@ elevenlabs = []
 agent = []
 rodio = ["dep:rodio"]
 logging = ["dep:env_logger"]
+agentrouter = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

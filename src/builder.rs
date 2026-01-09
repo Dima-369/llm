@@ -50,6 +50,8 @@ pub enum LLMBackend {
     Copilot,
     /// Together AI API provider
     Together,
+    /// AgentRouter API provider
+    AgentRouter,
 }
 
 /// Implements string parsing for LLMBackend enum.
@@ -95,6 +97,8 @@ impl std::str::FromStr for LLMBackend {
             "elevenlabs" => Ok(LLMBackend::ElevenLabs),
             "cohere" => Ok(LLMBackend::Cohere),
             "copilot" => Ok(LLMBackend::Copilot),
+            "together" => Ok(LLMBackend::Together),
+            "agentrouter" => Ok(LLMBackend::AgentRouter),
             _ => Err(LLMError::InvalidRequest(format!(
                 "Unknown LLM backend: {s}"
             ))),
@@ -978,6 +982,31 @@ impl LLMBuilder {
                         tools,
                         tool_choice,
                     ))
+                }
+            }
+            LLMBackend::AgentRouter => {
+                #[cfg(not(feature = "agentrouter"))]
+                return Err(LLMError::InvalidRequest(
+                    "AgentRouter feature not enabled".to_string(),
+                ));
+
+                #[cfg(feature = "agentrouter")]
+                {
+                    let agentrouter = crate::backends::agentrouter::AgentRouter::new(
+                        self.api_key,
+                        self.proxy_url,
+                        self.model,
+                        self.max_tokens,
+                        self.temperature,
+                        self.timeout_seconds,
+                        self.system,
+                        self.stream,
+                        self.top_p,
+                        self.top_k,
+                        self.tools,
+                        self.tool_choice,
+                    );
+                    Box::new(agentrouter)
                 }
             }
         };
