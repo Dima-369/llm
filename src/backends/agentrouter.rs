@@ -70,6 +70,8 @@ struct AgentRouterChatChoice {
 #[derive(Deserialize, Debug)]
 struct AgentRouterChatMsg {
     content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<ToolCall>>,
 }
 
 impl std::fmt::Display for AgentRouterChatResponse {
@@ -90,7 +92,9 @@ impl ChatResponse for AgentRouterChatResponse {
     }
 
     fn tool_calls(&self) -> Option<Vec<ToolCall>> {
-        todo!()
+        self.choices
+            .first()
+            .and_then(|c| c.message.tool_calls.clone())
     }
 }
 
