@@ -130,6 +130,10 @@ pub struct ToolCall {
     pub call_type: String,
     /// The function to call.
     pub function: FunctionCall,
+    /// Thought signature for Gemini 3 models (required for function calling).
+    /// This must be preserved and sent back when providing function results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 /// FunctionCall contains details about which function to call and with what arguments.
