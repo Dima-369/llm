@@ -154,6 +154,22 @@ struct AnthropicStreamResponse {
     #[serde(rename = "type")]
     response_type: String,
     delta: Option<AnthropicDelta>,
+    /// Content block for content_block_start events
+    content_block: Option<AnthropicContentBlock>,
+    /// Index of the content block (for content_block_start/delta/stop)
+    index: Option<usize>,
+}
+
+/// Content block in Anthropic streaming response
+#[derive(Deserialize, Debug)]
+struct AnthropicContentBlock {
+    #[serde(rename = "type")]
+    block_type: String,
+    /// For tool_use blocks
+    id: Option<String>,
+    name: Option<String>,
+    #[allow(dead_code)]
+    input: Option<Value>,
 }
 
 /// Delta content within an Anthropic streaming response.
@@ -163,6 +179,8 @@ struct AnthropicDelta {
     #[serde(rename = "type")]
     delta_type: Option<String>,
     text: Option<String>,
+    /// Partial JSON for tool input (streamed incrementally)
+    partial_json: Option<String>,
 }
 
 impl std::fmt::Display for AnthropicCompleteResponse {
@@ -622,6 +640,132 @@ impl ChatProvider for Anthropic {
             parse_anthropic_sse_chunk,
         ))
     }
+
+    /// Sends a streaming chat request to Anthropic's API with tool support.
+    ///
+    /// # Arguments
+    ///
+    /// * `messages` - Slice of chat messages representing the conversation
+    /// * `tools` - Optional slice of tools available for the model to use
+    ///
+    /// # Returns
+    ///
+    /// A stream of StreamEvent items or an error
+    async fn chat_stream_with_tools(
+        &self,
+        messages: &[ChatMessage],
+        tools: Option<&[Tool]>,
+    ) -> Result<
+        std::pin::Pin<Box<dyn Stream<Item = Result<crate::chat::StreamEvent, LLMError>> + Send>>,
+        LLMError,
+    > {
+        let anthropic_messages: Vec<AnthropicMessage> = messages
+            .iter()
+            .map(|m| AnthropicMessage {
+                role: match m.role {
+                    ChatRole::User => "user",
+                    ChatRole::Assistant => "assistant",
+                },
+                content: match &m.message_type {
+                    MessageType::Text => vec![MessageContent {
+                        message_type: Some("text"),
+                        text: Some(&m.content),
+                        image_url: None,
+                        source: None,
+                        tool_use_id: None,
+                        tool_input: None,
+                        tool_name: None,
+                        tool_result_id: None,
+                        tool_output: None,
+                    }],
+                    MessageType::Pdf(_) => unimplemented!(),
+                    MessageType::Image((image_mime, raw_bytes)) => {
+                        vec![MessageContent {
+                            message_type: Some("image"),
+                            text: None,
+                            image_url: None,
+                            source: Some(ImageSource {
+                                source_type: "base64",
+                                media_type: image_mime.mime_type(),
+                                data: BASE64.encode(raw_bytes),
+                            }),
+                            tool_use_id: None,
+                            tool_input: None,
+                            tool_name: None,
+                            tool_result_id: None,
+                            tool_output: None,
+                        }]
+                    }
+                    _ => vec![MessageContent {
+                        message_type: Some("text"),
+                        text: Some(&m.content),
+                        image_url: None,
+                        source: None,
+                        tool_use_id: None,
+                        tool_input: None,
+                        tool_name: None,
+                        tool_result_id: None,
+                        tool_output: None,
+                    }],
+                },
+            })
+            .collect();
+
+        // Use provided tools or fall back to self.tools
+        let effective_tools = tools.map(|t| t.to_vec()).or_else(|| self.tools.clone());
+        let anthropic_tools = effective_tools.as_ref().map(|t| {
+            t.iter()
+                .map(|tool| AnthropicTool {
+                    name: &tool.function.name,
+                    description: &tool.function.description,
+                    schema: &tool.function.parameters,
+                })
+                .collect::<Vec<_>>()
+        });
+
+        let req_body = AnthropicCompleteRequest {
+            messages: anthropic_messages,
+            model: &self.model,
+            max_tokens: Some(self.max_tokens),
+            temperature: Some(self.temperature),
+            system: Some(&self.system),
+            stream: Some(true),
+            top_p: self.top_p,
+            top_k: self.top_k,
+            tools: anthropic_tools,
+            tool_choice: None,
+            thinking: None,
+        };
+
+        let mut request = self.client.post("https://api.anthropic.com/v1/messages");
+        if let Some(api_key) = &self.api_key {
+            request = request.header("x-api-key", api_key);
+        }
+        request = request
+            .header("Content-Type", "application/json")
+            .header("anthropic-version", "2023-06-01")
+            .json(&req_body);
+
+        if self.timeout_seconds > 0 {
+            request = request.timeout(std::time::Duration::from_secs(self.timeout_seconds));
+        }
+
+        let response = request.send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            return Err(LLMError::ResponseFormatError {
+                message: format!("Anthropic API returned error status: {status}"),
+                raw_response: error_text,
+            });
+        }
+
+        Ok(crate::chat::create_sse_stream_with_tools(
+            response,
+            parse_anthropic_sse_chunk_with_tools,
+        ))
+    }
 }
 
 #[async_trait]
@@ -760,4 +904,76 @@ fn parse_anthropic_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
     }
 
     Ok(None)
+}
+
+/// Parses a Server-Sent Events (SSE) chunk from Anthropic's streaming API with tool support.
+///
+/// # Arguments
+///
+/// * `chunk` - The raw SSE chunk text
+///
+/// # Returns
+///
+/// * `Ok(Vec<StreamEvent>)` - List of events parsed from the chunk
+/// * `Err(LLMError)` - If parsing fails
+fn parse_anthropic_sse_chunk_with_tools(
+    chunk: &str,
+) -> Result<Vec<crate::chat::StreamEvent>, LLMError> {
+    use crate::chat::StreamEvent;
+
+    let mut events = Vec::new();
+
+    for line in chunk.lines() {
+        let line = line.trim();
+
+        if let Some(data) = line.strip_prefix("data: ") {
+            match serde_json::from_str::<AnthropicStreamResponse>(data) {
+                Ok(response) => {
+                    match response.response_type.as_str() {
+                        "content_block_start" => {
+                            // Check if this is a tool_use block
+                            if let Some(content_block) = &response.content_block {
+                                if content_block.block_type == "tool_use" {
+                                    let index = response.index.unwrap_or(0);
+                                    events.push(StreamEvent::ToolCallDelta {
+                                        index,
+                                        id: content_block.id.clone(),
+                                        name: content_block.name.clone(),
+                                        arguments: None,
+                                    });
+                                }
+                            }
+                        }
+                        "content_block_delta" => {
+                            if let Some(delta) = &response.delta {
+                                // Handle text delta
+                                if let Some(text) = &delta.text {
+                                    if !text.is_empty() {
+                                        events.push(StreamEvent::Text(text.clone()));
+                                    }
+                                }
+                                // Handle tool input delta (partial JSON)
+                                if let Some(partial_json) = &delta.partial_json {
+                                    let index = response.index.unwrap_or(0);
+                                    events.push(StreamEvent::ToolCallDelta {
+                                        index,
+                                        id: None,
+                                        name: None,
+                                        arguments: Some(partial_json.clone()),
+                                    });
+                                }
+                            }
+                        }
+                        "message_stop" => {
+                            events.push(StreamEvent::Done);
+                        }
+                        _ => {}
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    Ok(events)
 }

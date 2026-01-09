@@ -6,7 +6,120 @@ use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{error::LLMError, ToolCall};
+use crate::{error::LLMError, FunctionCall, ToolCall};
+
+/// Events emitted during streaming chat responses with tool support.
+///
+/// This enum represents the different types of events that can occur during
+/// a streaming response, including text chunks, tool calls, and usage information.
+#[derive(Debug, Clone)]
+pub enum StreamEvent {
+    /// A chunk of text content from the assistant
+    Text(String),
+    /// A chunk of reasoning content from the assistant (used by models like Grok)
+    Reasoning(String),
+    /// A complete tool call is ready to be executed.
+    /// Contains the tool call ID, function name, and complete arguments JSON.
+    ToolCall(ToolCall),
+    /// A delta/partial update for a tool call being streamed.
+    /// Contains the tool call index, and partial data (id, name, or arguments chunk).
+    ToolCallDelta {
+        /// Index of the tool call (for correlating multiple deltas)
+        index: usize,
+        /// Tool call ID (may be empty in delta updates)
+        id: Option<String>,
+        /// Function name (may be empty in delta updates)
+        name: Option<String>,
+        /// Partial arguments JSON string
+        arguments: Option<String>,
+    },
+    /// Usage information for the response
+    Usage {
+        /// Total tokens used in the request/response
+        total_tokens: u32,
+    },
+    /// The stream has completed
+    Done,
+}
+
+/// Accumulator for building complete tool calls from streaming deltas.
+///
+/// This is used internally to collect partial tool call data from multiple
+/// streaming events and construct complete `ToolCall` objects.
+#[derive(Debug, Clone, Default)]
+pub struct ToolCallAccumulator {
+    /// Map from tool call index to accumulated data
+    pub calls: std::collections::HashMap<usize, PartialToolCall>,
+}
+
+/// Partial tool call data being accumulated from streaming deltas.
+#[derive(Debug, Clone, Default)]
+pub struct PartialToolCall {
+    /// The tool call ID
+    pub id: String,
+    /// The function name
+    pub name: String,
+    /// The accumulated arguments JSON string
+    pub arguments: String,
+    /// Thought signature for Gemini 3 models
+    pub thought_signature: Option<String>,
+}
+
+impl ToolCallAccumulator {
+    /// Create a new empty accumulator
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Process a tool call delta and accumulate the data.
+    /// Returns `Some(ToolCall)` if this delta completes a tool call.
+    pub fn accumulate(&mut self, delta: &StreamEvent) -> Option<ToolCall> {
+        if let StreamEvent::ToolCallDelta {
+            index,
+            id,
+            name,
+            arguments,
+        } = delta
+        {
+            let entry = self.calls.entry(*index).or_default();
+            if let Some(id) = id {
+                entry.id.clone_from(id);
+            }
+            if let Some(name) = name {
+                entry.name.clone_from(name);
+            }
+            if let Some(args) = arguments {
+                entry.arguments.push_str(args);
+            }
+        }
+        None
+    }
+
+    /// Finalize all accumulated tool calls into complete `ToolCall` objects.
+    pub fn finalize(self) -> Vec<ToolCall> {
+        self.calls
+            .into_iter()
+            .map(|(_, partial)| ToolCall {
+                id: if partial.id.is_empty() {
+                    format!("call_{}", partial.name)
+                } else {
+                    partial.id
+                },
+                call_type: "function".to_string(),
+                function: FunctionCall {
+                    name: partial.name,
+                    arguments: partial.arguments,
+                },
+                thought_signature: partial.thought_signature,
+            })
+            .collect()
+    }
+
+    /// Check if there are any accumulated tool calls
+    pub fn has_calls(&self) -> bool {
+        !self.calls.is_empty()
+    }
+}
 
 /// Role of a participant in a chat conversation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -304,6 +417,64 @@ pub trait ChatProvider: Sync + Send {
         ))
     }
 
+    /// Sends a streaming chat request with tool support.
+    ///
+    /// This method returns a stream of `StreamEvent` items that can include:
+    /// - Text chunks as they are generated
+    /// - Tool call deltas as they are streamed
+    /// - Complete tool calls when fully received
+    /// - Usage information
+    /// - Done signal when the stream completes
+    ///
+    /// # Arguments
+    ///
+    /// * `messages` - The conversation history as a slice of chat messages
+    /// * `tools` - Optional slice of tools available for the model to use
+    ///
+    /// # Returns
+    ///
+    /// A stream of `StreamEvent` items or an error
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use futures::StreamExt;
+    ///
+    /// let stream = provider.chat_stream_with_tools(&messages, Some(&tools)).await?;
+    /// let mut tool_accumulator = ToolCallAccumulator::new();
+    /// let mut text_content = String::new();
+    ///
+    /// while let Some(event) = stream.next().await {
+    ///     match event? {
+    ///         StreamEvent::Text(chunk) => {
+    ///             print!("{}", chunk);
+    ///             text_content.push_str(&chunk);
+    ///         }
+    ///         StreamEvent::ToolCallDelta { .. } => {
+    ///             tool_accumulator.accumulate(&event);
+    ///         }
+    ///         StreamEvent::ToolCall(call) => {
+    ///             // Handle complete tool call
+    ///         }
+    ///         StreamEvent::Done => {
+    ///             let tool_calls = tool_accumulator.finalize();
+    ///             // Process accumulated tool calls
+    ///         }
+    ///         _ => {}
+    ///     }
+    /// }
+    /// ```
+    async fn chat_stream_with_tools(
+        &self,
+        _messages: &[ChatMessage],
+        _tools: Option<&[Tool]>,
+    ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<StreamEvent, LLMError>> + Send>>, LLMError>
+    {
+        Err(LLMError::Generic(
+            "Streaming with tools not supported for this provider".to_string(),
+        ))
+    }
+
     /// Get current memory contents if provider supports memory
     async fn memory_contents(&self) -> Option<Vec<ChatMessage>> {
         None
@@ -450,6 +621,73 @@ where
                 Ok(None) => None,
                 Err(e) => Some(Err(e)),
             }
+        });
+
+    Box::pin(stream)
+}
+
+/// Creates a Server-Sent Events (SSE) stream with tool support from an HTTP response.
+///
+/// # Arguments
+///
+/// * `response` - The HTTP response from the streaming API
+/// * `parser` - Function to parse each SSE chunk into a vector of StreamEvent items
+///
+/// # Returns
+///
+/// A pinned stream of StreamEvent items or an error
+pub(crate) fn create_sse_stream_with_tools<F>(
+    response: reqwest::Response,
+    parser: F,
+) -> std::pin::Pin<Box<dyn Stream<Item = Result<StreamEvent, LLMError>> + Send>>
+where
+    F: Fn(&str) -> Result<Vec<StreamEvent>, LLMError> + Send + 'static,
+{
+    use std::sync::{Arc, Mutex};
+
+    let buffer = Arc::new(Mutex::new(String::new()));
+
+    let stream = response
+        .bytes_stream()
+        .map(move |chunk| match chunk {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes);
+                let mut buf = buffer.lock().unwrap();
+                buf.push_str(&text);
+
+                let mut events = Vec::new();
+                let mut remaining = String::new();
+
+                for line in buf.lines() {
+                    if line.starts_with("data: ") {
+                        match parser(line) {
+                            Ok(parsed_events) => events.extend(parsed_events),
+                            Err(_) => {}
+                        }
+                    }
+                }
+
+                if !buf.ends_with('\n') {
+                    if let Some(last_newline) = buf.rfind('\n') {
+                        remaining = buf[last_newline + 1..].to_string();
+                    } else {
+                        remaining = buf.clone();
+                    }
+                }
+
+                buf.clear();
+                buf.push_str(&remaining);
+
+                Ok(events)
+            }
+            Err(e) => Err(LLMError::HttpError(e.to_string())),
+        })
+        .flat_map(|result| {
+            let events: Vec<Result<StreamEvent, LLMError>> = match result {
+                Ok(events) => events.into_iter().map(Ok).collect(),
+                Err(e) => vec![Err(e)],
+            };
+            futures::stream::iter(events)
         });
 
     Box::pin(stream)

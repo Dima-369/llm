@@ -196,6 +196,23 @@ struct OpenAIChatStreamChoice {
 #[derive(Deserialize, Debug)]
 struct OpenAIChatStreamDelta {
     content: Option<String>,
+    reasoning_content: Option<String>,
+    tool_calls: Option<Vec<OpenAIStreamToolCallDelta>>,
+}
+
+/// Tool call delta in a streaming response
+#[derive(Deserialize, Debug)]
+struct OpenAIStreamToolCallDelta {
+    index: usize,
+    id: Option<String>,
+    function: Option<OpenAIStreamFunctionDelta>,
+}
+
+/// Function delta in a streaming tool call
+#[derive(Deserialize, Debug)]
+struct OpenAIStreamFunctionDelta {
+    name: Option<String>,
+    arguments: Option<String>,
 }
 
 /// An object specifying the format that the model must output.
@@ -677,6 +694,113 @@ impl ChatProvider for OpenAI {
 
         Ok(crate::chat::create_sse_stream(response, parse_sse_chunk))
     }
+
+    /// Sends a streaming chat request to OpenAI's API with tool support.
+    ///
+    /// # Arguments
+    ///
+    /// * `messages` - Slice of chat messages representing the conversation
+    /// * `tools` - Optional slice of tools available for the model to use
+    ///
+    /// # Returns
+    ///
+    /// A stream of StreamEvent items or an error
+    async fn chat_stream_with_tools(
+        &self,
+        messages: &[ChatMessage],
+        tools: Option<&[Tool]>,
+    ) -> Result<
+        std::pin::Pin<Box<dyn Stream<Item = Result<crate::chat::StreamEvent, LLMError>> + Send>>,
+        LLMError,
+    > {
+        let messages = messages.to_vec();
+        let mut openai_msgs: Vec<OpenAIChatMessage> = vec![];
+
+        for msg in messages {
+            if let MessageType::ToolResult(ref results) = msg.message_type {
+                for result in results {
+                    openai_msgs.push(OpenAIChatMessage {
+                        role: "tool",
+                        tool_call_id: Some(result.id.clone()),
+                        tool_calls: None,
+                        content: Some(Right(result.function.arguments.clone())),
+                    });
+                }
+            } else {
+                openai_msgs.push(chat_message_to_api_message(msg))
+            }
+        }
+
+        if let Some(system) = &self.system {
+            openai_msgs.insert(
+                0,
+                OpenAIChatMessage {
+                    role: "system",
+                    content: Some(Left(vec![MessageContent {
+                        message_type: Some("text"),
+                        text: Some(system),
+                        image_url: None,
+                        tool_call_id: None,
+                        tool_output: None,
+                    }])),
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+            );
+        }
+
+        // Use provided tools or fall back to self.tools
+        let effective_tools = tools.map(|t| t.to_vec()).or_else(|| self.tools.clone());
+
+        let body = OpenAIChatRequest {
+            model: &self.model,
+            messages: openai_msgs,
+            max_tokens: self.max_tokens,
+            temperature: self.temperature,
+            stream: true,
+            top_p: self.top_p,
+            top_k: self.top_k,
+            tools: effective_tools,
+            tool_choice: self.tool_choice.clone(),
+            reasoning_effort: self.reasoning_effort.clone(),
+            response_format: None,
+            web_search_options: None,
+        };
+
+        let url = if self.is_base_url_absolute {
+            self.base_url.clone()
+        } else {
+            self.base_url
+                .join("chat/completions")
+                .map_err(|e| LLMError::HttpError(e.to_string()))?
+        };
+
+        let mut request = self.client.post(url);
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        request = request.json(&body);
+
+        if let Some(timeout) = self.timeout_seconds {
+            request = request.timeout(std::time::Duration::from_secs(timeout));
+        }
+
+        let response = request.send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            return Err(LLMError::ResponseFormatError {
+                message: format!("OpenAI API returned error status: {status}"),
+                raw_response: error_text,
+            });
+        }
+
+        Ok(crate::chat::create_sse_stream_with_tools(
+            response,
+            parse_sse_chunk_with_tools,
+        ))
+    }
 }
 
 // Create an owned OpenAIChatMessage that doesn't borrow from any temporary variables
@@ -1048,4 +1172,66 @@ fn parse_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
     } else {
         Ok(Some(collected_content))
     }
+}
+
+/// Parses a Server-Sent Events (SSE) chunk from OpenAI's streaming API with tool support.
+///
+/// # Arguments
+///
+/// * `chunk` - The raw SSE chunk text
+///
+/// # Returns
+///
+/// * `Ok(Vec<StreamEvent>)` - List of events parsed from the chunk
+/// * `Err(LLMError)` - If parsing fails
+fn parse_sse_chunk_with_tools(chunk: &str) -> Result<Vec<crate::chat::StreamEvent>, LLMError> {
+    use crate::chat::StreamEvent;
+
+    let mut events = Vec::new();
+
+    for line in chunk.lines() {
+        let line = line.trim();
+
+        if let Some(data) = line.strip_prefix("data: ") {
+            if data == "[DONE]" {
+                events.push(StreamEvent::Done);
+                continue;
+            }
+
+            match serde_json::from_str::<OpenAIChatStreamResponse>(data) {
+                Ok(response) => {
+                    if let Some(choice) = response.choices.first() {
+                        // Handle reasoning content (used by Grok and other reasoning models)
+                        if let Some(reasoning) = &choice.delta.reasoning_content {
+                            if !reasoning.is_empty() {
+                                events.push(StreamEvent::Reasoning(reasoning.clone()));
+                            }
+                        }
+
+                        // Handle text content
+                        if let Some(content) = &choice.delta.content {
+                            if !content.is_empty() {
+                                events.push(StreamEvent::Text(content.clone()));
+                            }
+                        }
+
+                        // Handle tool calls
+                        if let Some(tool_calls) = &choice.delta.tool_calls {
+                            for tc in tool_calls {
+                                events.push(StreamEvent::ToolCallDelta {
+                                    index: tc.index,
+                                    id: tc.id.clone(),
+                                    name: tc.function.as_ref().and_then(|f| f.name.clone()),
+                                    arguments: tc.function.as_ref().and_then(|f| f.arguments.clone()),
+                                });
+                            }
+                        }
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    Ok(events)
 }

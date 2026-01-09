@@ -1024,6 +1024,162 @@ impl ChatProvider for Google {
             parse_google_sse_chunk,
         ))
     }
+
+    /// Sends a streaming chat request to Google's Gemini API with tool support.
+    ///
+    /// # Arguments
+    ///
+    /// * `messages` - Slice of chat messages representing the conversation
+    /// * `tools` - Optional slice of tools available for the model to use
+    ///
+    /// # Returns
+    ///
+    /// A stream of StreamEvent items or an error
+    async fn chat_stream_with_tools(
+        &self,
+        messages: &[ChatMessage],
+        tools: Option<&[Tool]>,
+    ) -> Result<
+        std::pin::Pin<Box<dyn Stream<Item = Result<crate::chat::StreamEvent, LLMError>> + Send>>,
+        LLMError,
+    > {
+        let mut chat_contents = Vec::with_capacity(messages.len());
+
+        if let Some(system) = &self.system {
+            chat_contents.push(GoogleChatContent {
+                role: "user",
+                parts: vec![GoogleContentPart::Text(GoogleTextPart { text: system })],
+            });
+        }
+
+        for msg in messages {
+            let role = match &msg.message_type {
+                MessageType::ToolResult(_) => "function",
+                _ => match msg.role {
+                    ChatRole::User => "user",
+                    ChatRole::Assistant => "model",
+                },
+            };
+
+            chat_contents.push(GoogleChatContent {
+                role,
+                parts: match &msg.message_type {
+                    MessageType::Text => vec![GoogleContentPart::Text(GoogleTextPart {
+                        text: &msg.content,
+                    })],
+                    MessageType::Image((image_mime, raw_bytes)) => {
+                        vec![GoogleContentPart::InlineData(GoogleInlineDataPart {
+                            inline_data: GoogleInlineData {
+                                mime_type: image_mime.mime_type().to_string(),
+                                data: BASE64.encode(raw_bytes),
+                            },
+                        })]
+                    }
+                    MessageType::Pdf(raw_bytes) => {
+                        vec![GoogleContentPart::InlineData(GoogleInlineDataPart {
+                            inline_data: GoogleInlineData {
+                                mime_type: "application/pdf".to_string(),
+                                data: BASE64.encode(raw_bytes),
+                            },
+                        })]
+                    }
+                    MessageType::ImageURL(_) => vec![GoogleContentPart::Text(GoogleTextPart {
+                        text: &msg.content,
+                    })],
+                    MessageType::ToolUse(calls) => calls
+                        .iter()
+                        .map(|call| {
+                            GoogleContentPart::FunctionCall(GoogleFunctionCallPart {
+                                function_call: GoogleFunctionCall {
+                                    name: call.function.name.clone(),
+                                    args: serde_json::from_str(&call.function.arguments)
+                                        .unwrap_or(serde_json::Value::Null),
+                                },
+                                thought_signature: call.thought_signature.clone(),
+                            })
+                        })
+                        .collect(),
+                    MessageType::ToolResult(result) => result
+                        .iter()
+                        .map(|result| {
+                            let parsed_args =
+                                serde_json::from_str::<Value>(&result.function.arguments)
+                                    .unwrap_or(serde_json::Value::Null);
+                            GoogleContentPart::FunctionResponse(GoogleFunctionResponsePart {
+                                function_response: GoogleFunctionResponse {
+                                    name: result.function.name.clone(),
+                                    response: GoogleFunctionResponseContent {
+                                        name: result.function.name.clone(),
+                                        content: parsed_args,
+                                    },
+                                },
+                            })
+                        })
+                        .collect(),
+                },
+            });
+        }
+
+        // Convert tools to Google's format if provided
+        let google_tools = tools.map(|t| {
+            vec![GoogleTool {
+                function_declarations: t.iter().map(GoogleFunctionDeclaration::from).collect(),
+            }]
+        });
+
+        let generation_config = if self.max_tokens.is_none()
+            && self.temperature.is_none()
+            && self.top_p.is_none()
+            && self.top_k.is_none()
+        {
+            None
+        } else {
+            Some(GoogleGenerationConfig {
+                max_output_tokens: self.max_tokens,
+                temperature: self.temperature,
+                top_p: self.top_p,
+                top_k: self.top_k,
+                response_mime_type: None,
+                response_schema: None,
+            })
+        };
+
+        let req_body = GoogleChatRequest {
+            contents: chat_contents,
+            generation_config,
+            tools: google_tools,
+        };
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse",
+            model = self.model
+        );
+        let mut request = self.client.post(&url);
+        if let Some(api_key) = &self.api_key {
+            request = request.query(&[("key", api_key)]);
+        }
+        request = request.json(&req_body);
+
+        if let Some(timeout) = self.timeout_seconds {
+            request = request.timeout(std::time::Duration::from_secs(timeout));
+        }
+
+        let response = request.send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            return Err(LLMError::ResponseFormatError {
+                message: format!("Google API returned error status: {status}"),
+                raw_response: error_text,
+            });
+        }
+
+        Ok(crate::chat::create_sse_stream_with_tools(
+            response,
+            parse_google_sse_chunk_with_tools,
+        ))
+    }
 }
 
 #[async_trait]
@@ -1136,6 +1292,75 @@ fn parse_google_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
     }
 
     Ok(None)
+}
+
+/// Parses a Server-Sent Events (SSE) chunk from Google's streaming API with tool support.
+///
+/// # Arguments
+///
+/// * `chunk` - The raw SSE chunk text
+///
+/// # Returns
+///
+/// * `Ok(Vec<StreamEvent>)` - List of events parsed from the chunk
+/// * `Err(LLMError)` - If parsing fails
+fn parse_google_sse_chunk_with_tools(
+    chunk: &str,
+) -> Result<Vec<crate::chat::StreamEvent>, LLMError> {
+    use crate::chat::StreamEvent;
+
+    let mut events = Vec::new();
+
+    for line in chunk.lines() {
+        let line = line.trim();
+
+        if let Some(data) = line.strip_prefix("data: ") {
+            match serde_json::from_str::<GoogleStreamResponse>(data) {
+                Ok(response) => {
+                    if let Some(candidates) = response.candidates {
+                        if let Some(candidate) = candidates.first() {
+                            for (index, part) in candidate.content.parts.iter().enumerate() {
+                                // Check for text content
+                                if !part.text.is_empty() {
+                                    events.push(StreamEvent::Text(part.text.clone()));
+                                }
+
+                                // Check for function calls
+                                if let Some(func_call) = &part.function_call {
+                                    let tool_call = ToolCall {
+                                        id: format!("call_{}", func_call.name),
+                                        call_type: "function".to_string(),
+                                        function: FunctionCall {
+                                            name: func_call.name.clone(),
+                                            arguments: serde_json::to_string(&func_call.args)
+                                                .unwrap_or_default(),
+                                        },
+                                        thought_signature: part.thought_signature.clone(),
+                                    };
+                                    // Google returns complete tool calls, not deltas
+                                    events.push(StreamEvent::ToolCall(tool_call));
+
+                                    // Also emit a delta for consistency with accumulator pattern
+                                    events.push(StreamEvent::ToolCallDelta {
+                                        index,
+                                        id: Some(format!("call_{}", func_call.name)),
+                                        name: Some(func_call.name.clone()),
+                                        arguments: Some(
+                                            serde_json::to_string(&func_call.args)
+                                                .unwrap_or_default(),
+                                        ),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    Ok(events)
 }
 
 #[async_trait]
