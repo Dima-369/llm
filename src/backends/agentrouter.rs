@@ -145,6 +145,7 @@ impl ChatProvider for AgentRouter {
     async fn chat(&self, messages: &[ChatMessage]) -> Result<Box<dyn ChatResponse>, LLMError> {
         let mut agentrouter_msgs: Vec<AgentRouterChatMessage> = messages
             .iter()
+            .filter(|m| !m.content.trim().is_empty()) // Filter out messages with empty content
             .map(|m| AgentRouterChatMessage {
                 role: match m.role {
                     ChatRole::User => "user",
@@ -224,6 +225,7 @@ impl ChatProvider for AgentRouter {
     ) -> Result<Box<dyn ChatResponse>, LLMError> {
         let mut agentrouter_msgs: Vec<AgentRouterChatMessage> = messages
             .iter()
+            .filter(|m| !m.content.trim().is_empty()) // Filter out messages with empty content
             .map(|m| AgentRouterChatMessage {
                 role: match m.role {
                     ChatRole::User => "user",
