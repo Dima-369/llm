@@ -1145,7 +1145,13 @@ fn parse_sse_chunk(chunk: &str) -> Result<Option<String>, LLMError> {
     for line in chunk.lines() {
         let line = line.trim();
 
-        if let Some(data) = line.strip_prefix("data: ") {
+        // Handle both "data: " (with space) and "data:" (without space) prefixes
+        // Some providers like LongCat use "data:{" without a space
+        let data = line
+            .strip_prefix("data: ")
+            .or_else(|| line.strip_prefix("data:"));
+
+        if let Some(data) = data {
             if data == "[DONE]" {
                 if collected_content.is_empty() {
                     return Ok(None);
@@ -1192,7 +1198,13 @@ fn parse_sse_chunk_with_tools(chunk: &str) -> Result<Vec<crate::chat::StreamEven
     for line in chunk.lines() {
         let line = line.trim();
 
-        if let Some(data) = line.strip_prefix("data: ") {
+        // Handle both "data: " (with space) and "data:" (without space) prefixes
+        // Some providers like LongCat use "data:{" without a space
+        let data = line
+            .strip_prefix("data: ")
+            .or_else(|| line.strip_prefix("data:"));
+
+        if let Some(data) = data {
             if data == "[DONE]" {
                 events.push(StreamEvent::Done);
                 continue;
