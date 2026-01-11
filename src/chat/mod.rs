@@ -656,29 +656,32 @@ where
                 buf.push_str(&text);
 
                 let mut events = Vec::new();
-                let mut remaining = String::new();
 
-                for line in buf.lines() {
+                // Split buffer into complete lines and remaining incomplete line
+                let (lines_to_process, remaining) = if buf.ends_with('\n') {
+                    (buf.as_str(), "")
+                } else if let Some(last_newline) = buf.rfind('\n') {
+                    (&buf[..last_newline + 1], &buf[last_newline + 1..])
+                } else {
+                    // No complete lines yet, keep everything in buffer
+                    ("", buf.as_str())
+                };
+
+                // Only process complete lines
+                for line in lines_to_process.lines() {
                     // Handle both "data: " (with space) and "data:" (without space)
                     // Some providers like LongCat use "data:{" without a space
                     if line.starts_with("data: ") || line.starts_with("data:") {
-                        match parser(line) {
-                            Ok(parsed_events) => events.extend(parsed_events),
-                            Err(_) => {}
+                        if let Ok(parsed_events) = parser(line) {
+                            events.extend(parsed_events);
                         }
                     }
                 }
 
-                if !buf.ends_with('\n') {
-                    if let Some(last_newline) = buf.rfind('\n') {
-                        remaining = buf[last_newline + 1..].to_string();
-                    } else {
-                        remaining = buf.clone();
-                    }
-                }
-
+                // Keep only the incomplete line for next chunk
+                let remaining_owned = remaining.to_string();
                 buf.clear();
-                buf.push_str(&remaining);
+                buf.push_str(&remaining_owned);
 
                 Ok(events)
             }
