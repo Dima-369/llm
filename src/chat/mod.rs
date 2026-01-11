@@ -659,7 +659,9 @@ where
                 let mut remaining = String::new();
 
                 for line in buf.lines() {
-                    if line.starts_with("data: ") {
+                    // Handle both "data: " (with space) and "data:" (without space)
+                    // Some providers like LongCat use "data:{" without a space
+                    if line.starts_with("data: ") || line.starts_with("data:") {
                         match parser(line) {
                             Ok(parsed_events) => events.extend(parsed_events),
                             Err(_) => {}
