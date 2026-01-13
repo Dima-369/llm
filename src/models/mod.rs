@@ -19,6 +19,7 @@ pub enum Models {
     ElevenLabs,
     Together,
     AgentRouter,
+    AntiGravity,
 }
 
 impl Models {
@@ -358,6 +359,15 @@ impl Models {
                 None, // tools
                 None, // tool_choice
             ))),
+            Models::AntiGravity => Ok(Box::new(crate::backends::antigravity::AntiGravity::new(
+                secrets.get("ANTIGRAVITY_MODEL").map(|s| s.to_string()),
+                secrets.get("ANTIGRAVITY_MAX_TOKENS").and_then(|s| s.parse().ok()),
+                secrets.get("ANTIGRAVITY_TEMPERATURE").and_then(|s| s.parse().ok()),
+                secrets.get("ANTIGRAVITY_SYSTEM").map(|s| s.to_string()),
+                None, // tools
+                None, // tool_choice
+                secrets.get("ANTIGRAVITY_THINKING_BUDGET_TOKENS").and_then(|s| s.parse().ok()),
+            )?)),
         }
     }
 }

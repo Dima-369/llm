@@ -52,6 +52,8 @@ pub enum LLMBackend {
     Together,
     /// AgentRouter API provider
     AgentRouter,
+    /// AntiGravity API provider
+    AntiGravity,
 }
 
 /// Implements string parsing for LLMBackend enum.
@@ -99,6 +101,7 @@ impl std::str::FromStr for LLMBackend {
             "copilot" => Ok(LLMBackend::Copilot),
             "together" => Ok(LLMBackend::Together),
             "agentrouter" => Ok(LLMBackend::AgentRouter),
+            "antigravity" => Ok(LLMBackend::AntiGravity),
             _ => Err(LLMError::InvalidRequest(format!(
                 "Unknown LLM backend: {s}"
             ))),
@@ -1008,6 +1011,23 @@ impl LLMBuilder {
                     );
                     Box::new(agentrouter)
                 }
+            }
+            LLMBackend::AntiGravity => {
+                #[cfg(not(feature = "antigravity"))]
+                return Err(LLMError::InvalidRequest(
+                    "AntiGravity feature not enabled".to_string(),
+                ));
+
+                #[cfg(feature = "antigravity")]
+                Box::new(crate::backends::antigravity::AntiGravity::new(
+                    self.model,
+                    self.max_tokens,
+                    self.temperature,
+                    self.system,
+                    tools,
+                    self.tool_choice,
+                    self.reasoning_budget_tokens,
+                )?)
             }
         };
 

@@ -37,3 +37,6 @@ pub mod copilot;
 
 #[cfg(feature = "agentrouter")]
 pub mod agentrouter;
+
+#[cfg(feature = "antigravity")]
+pub mod antigravity;
