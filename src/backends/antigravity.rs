@@ -705,6 +705,9 @@ impl ChatProvider for AntiGravity {
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await?;
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                return Err(LLMError::TooManyRequests(text));
+            }
             return Err(LLMError::ProviderError(format!(
                 "AntiGravity error {}: {}",
                 status, text
