@@ -600,12 +600,27 @@ impl ChatProvider for AntiGravity {
             None
         };
 
+        let tool_config = if let Some(tc) = &self.tool_choice {
+            Some(serde_json::json!({
+                "functionCallingConfig": {
+                    "mode": match tc {
+                        ToolChoice::Auto => "AUTO",
+                        ToolChoice::Any => "ANY",
+                        ToolChoice::None => "NONE",
+                        _ => "AUTO",
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
         let mut generation_config = serde_json::json!({
             "temperature": self.temperature,
         });
 
         // Claude thinking specific configuration (matching diff logic)
-        let thinking_budget = 32_768;
+        let thinking_budget = self.thinking_budget_tokens.unwrap_or(32_768);
         let mut max_tokens = self.max_tokens;
 
         if self.model.contains("thinking") {
@@ -633,12 +648,16 @@ impl ChatProvider for AntiGravity {
             "parts": [{ "text": system_instruction_text }]
         });
 
-        let gemini_request = serde_json::json!({
+        let mut gemini_request = serde_json::json!({
             "contents": contents,
             "tools": tools_json,
             "generationConfig": generation_config,
             "systemInstruction": system_instruction
         });
+
+        if let Some(tc) = tool_config {
+            gemini_request["toolConfig"] = tc;
+        }
 
         // Generate Request ID matching diff format (base64 encoded random bytes)
         use base64::Engine;
