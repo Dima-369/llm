@@ -548,25 +548,33 @@ impl ChatProvider for AntiGravity {
                 MessageType::ToolUse(calls) => calls
                     .iter()
                     .map(|c| {
+                        let mut fc = serde_json::Map::new();
+                        fc.insert("name".to_string(), serde_json::Value::String(c.function.name.clone()));
+                        fc.insert("args".to_string(), serde_json::from_str::<Value>(&c.function.arguments).unwrap_or(Value::Null));
+                        if !c.id.is_empty() {
+                            fc.insert("id".to_string(), serde_json::Value::String(c.id.clone()));
+                        }
+                        
                         serde_json::json!({
-                            "functionCall": {
-                                "name": c.function.name,
-                                "args": serde_json::from_str::<Value>(&c.function.arguments).unwrap_or(Value::Null)
-                            }
+                            "functionCall": fc
                         })
                     })
                     .collect(),
                 MessageType::ToolResult(results) => results
                     .iter()
                     .map(|r| {
+                        let mut fr = serde_json::Map::new();
+                        fr.insert("name".to_string(), serde_json::Value::String(r.function.name.clone()));
+                        fr.insert("response".to_string(), serde_json::json!({
+                            "name": r.function.name,
+                            "content": serde_json::from_str::<Value>(&r.function.arguments).unwrap_or(Value::Null)
+                        }));
+                        if !r.id.is_empty() {
+                            fr.insert("id".to_string(), serde_json::Value::String(r.id.clone()));
+                        }
+
                         serde_json::json!({
-                            "functionResponse": {
-                                "name": r.function.name,
-                                "response": {
-                                    "name": r.function.name,
-                                    "content": serde_json::from_str::<Value>(&r.function.arguments).unwrap_or(Value::Null)
-                                }
-                            }
+                            "functionResponse": fr
                         })
                     })
                     .collect(),
@@ -782,8 +790,11 @@ fn parse_antigravity_sse(
                                      let args = fc.get("args").map(|a| a.to_string()).unwrap_or_default();
                                      let thought_sig = part.get("thoughtSignature").and_then(|s| s.as_str()).map(|s| s.to_string());
                                      
+                                     let id = fc.get("id").and_then(|s| s.as_str()).map(|s| s.to_string())
+                                         .unwrap_or_else(|| format!("call_{}", name));
+
                                      events.push(StreamEvent::ToolCall(ToolCall {
-                                         id: format!("call_{}", name), // AntiGravity/Gemini doesn't provide IDs for calls usually?
+                                         id,
                                          call_type: "function".to_string(),
                                          function: FunctionCall {
                                              name,
