@@ -555,9 +555,17 @@ impl ChatProvider for AntiGravity {
                             fc.insert("id".to_string(), serde_json::Value::String(c.id.clone()));
                         }
                         
-                        serde_json::json!({
-                            "functionCall": fc
-                        })
+                        let mut part = serde_json::Map::new();
+                        part.insert("functionCall".to_string(), serde_json::Value::Object(fc));
+                        
+                        // Add thought_signature if present
+                        if let Some(ref sig) = c.thought_signature {
+                            if !sig.is_empty() {
+                                part.insert("thoughtSignature".to_string(), serde_json::Value::String(sig.clone()));
+                            }
+                        }
+                        
+                        serde_json::Value::Object(part)
                     })
                     .collect(),
                 MessageType::ToolResult(results) => results
