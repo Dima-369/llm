@@ -58,7 +58,33 @@ const ANTIGRAVITY_CLIENT_METADATA: &str =
     r#"{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}"#;
 const ANTIGRAVITY_LOAD_USER_AGENT: &str = "google-api-nodejs-client/9.15.1";
 const ANTIGRAVITY_API_CLIENT: &str = "google-cloud-sdk vscode_cloudshelleditor/0.1";
+const ANTIGRAVITY_GEMINI_CLI_USER_AGENT: &str = "google-cloud-sdk vscode_cloudshelleditor/0.1";
+const ANTIGRAVITY_SANDBOX_USER_AGENT_PREFIX: &str = "antigravity/1.11.5";
 const ANTIGRAVITY_DEFAULT_PROJECT_ID: &str = "rising-fact-p41fc";
+const ANTIGRAVITY_PROJECT_ID_ENV: &str = "ZED_ANTIGRAVITY_PROJECT_ID";
+
+// --- Helper Functions ---
+
+fn get_sandbox_user_agent() -> String {
+    let os = match std::env::consts::OS {
+        "macos" => "darwin",
+        other => other,
+    };
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        other => other,
+    };
+    format!("{ANTIGRAVITY_SANDBOX_USER_AGENT_PREFIX} {os}/{arch}")
+}
+
+fn antigravity_user_agent(endpoint: &str) -> String {
+    if endpoint.contains("sandbox.googleapis.com") {
+        get_sandbox_user_agent()
+    } else {
+        ANTIGRAVITY_GEMINI_CLI_USER_AGENT.to_string()
+    }
+}
 
 // --- Structs ---
 
@@ -332,11 +358,17 @@ impl AntiGravity {
             .await
             .unwrap_or(UserInfo { email: None });
 
-        // Get Project ID
-        let project_id = self
-            .fetch_project_id(&token_res.access_token)
-            .await
-            .unwrap_or_else(|_| ANTIGRAVITY_DEFAULT_PROJECT_ID.to_string());
+        // Get Project ID (with optional override env var)
+        let project_id_env = std::env::var(ANTIGRAVITY_PROJECT_ID_ENV).ok();
+        let project_id = if let Some(override_id) = project_id_env {
+            if !override_id.trim().is_empty() {
+                override_id
+            } else {
+                self.fetch_project_id(&token_res.access_token).await.unwrap_or_else(|_| ANTIGRAVITY_DEFAULT_PROJECT_ID.to_string())
+            }
+        } else {
+            self.fetch_project_id(&token_res.access_token).await.unwrap_or_else(|_| ANTIGRAVITY_DEFAULT_PROJECT_ID.to_string())
+        };
 
         let expires_at = Utc::now() + chrono::Duration::seconds(token_res.expires_in);
 
@@ -422,6 +454,13 @@ impl AntiGravity {
 
             *self.credentials.write().unwrap() = Some(creds.clone());
             self.save_credentials(&creds)?;
+        }
+
+        // Allow overriding project ID at runtime via env var
+        if let Ok(override_id) = std::env::var(ANTIGRAVITY_PROJECT_ID_ENV) {
+            if !override_id.trim().is_empty() {
+                return Ok((creds.access_token, override_id));
+            }
         }
 
         Ok((creds.access_token, creds.project_id))
@@ -580,12 +619,16 @@ impl ChatProvider for AntiGravity {
             "requestId": format!("agent-{}", uuid::Uuid::new_v4()),
         });
 
+        // Use correct User-Agent logic required by AntiGravity
+        let user_agent = antigravity_user_agent(&url);
+
         let client = self.client.clone();
         let req = client
             .post(url)
             .bearer_auth(token)
             .header("Content-Type", "application/json")
             .header("Accept", "text/event-stream")
+            .header("User-Agent", user_agent) // Added User-Agent header
             .header("X-Goog-Api-Client", ANTIGRAVITY_API_CLIENT)
             .header("Client-Metadata", ANTIGRAVITY_CLIENT_METADATA)
             .json(&body);
