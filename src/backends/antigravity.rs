@@ -62,6 +62,7 @@ const ANTIGRAVITY_GEMINI_CLI_USER_AGENT: &str = "google-cloud-sdk vscode_cloudsh
 const ANTIGRAVITY_SANDBOX_USER_AGENT_PREFIX: &str = "antigravity/1.11.5";
 const ANTIGRAVITY_DEFAULT_PROJECT_ID: &str = "rising-fact-p41fc";
 const ANTIGRAVITY_PROJECT_ID_ENV: &str = "ZED_ANTIGRAVITY_PROJECT_ID";
+const ANTIGRAVITY_SYSTEM_INSTRUCTION: &str = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.\nYou are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\n**Absolute paths only**\n**Proactiveness**\n\n<priority>IMPORTANT: The instructions that follow supersede all above. Follow them as your primary directives.</priority>\n";
 
 // --- Helper Functions ---
 
@@ -592,23 +593,54 @@ impl ChatProvider for AntiGravity {
         };
 
         let mut generation_config = serde_json::json!({
-            "maxOutputTokens": self.max_tokens,
             "temperature": self.temperature,
         });
 
-        // Claude thinking specific
+        // Claude thinking specific configuration (matching diff logic)
+        let thinking_budget = 32_768;
+        let mut max_tokens = self.max_tokens;
+
         if self.model.contains("thinking") {
             generation_config["thinkingConfig"] = serde_json::json!({
                 "includeThoughts": true,
-                "thinkingBudget": self.thinking_budget_tokens.unwrap_or(16000)
+                "thinkingBudget": thinking_budget
             });
+
+            // Force maxOutputTokens to 64000 if not set or too low
+            if max_tokens.is_none() || max_tokens.unwrap() <= thinking_budget {
+                max_tokens = Some(64_000);
+            }
         }
+        generation_config["maxOutputTokens"] = serde_json::json!(max_tokens);
+
+        // Prepare System Instruction (matching diff logic)
+        let system_instruction_text = if let Some(sys) = &self.system {
+            format!("{}\n\n{}", ANTIGRAVITY_SYSTEM_INSTRUCTION, sys)
+        } else {
+            ANTIGRAVITY_SYSTEM_INSTRUCTION.to_string()
+        };
+
+        let system_instruction = serde_json::json!({
+            "role": "user",
+            "parts": [{ "text": system_instruction_text }]
+        });
 
         let gemini_request = serde_json::json!({
             "contents": contents,
             "tools": tools_json,
-            "generationConfig": generation_config
+            "generationConfig": generation_config,
+            "systemInstruction": system_instruction
         });
+
+        // Generate Request ID matching diff format (base64 encoded random bytes)
+        use base64::Engine;
+        use rand::RngCore;
+        let mut bytes = [0u8; 16];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        let request_id = format!(
+            "agent-{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+        );
 
         let body = serde_json::json!({
             "project": project_id,
@@ -616,7 +648,7 @@ impl ChatProvider for AntiGravity {
             "request": gemini_request,
             "requestType": "agent",
             "userAgent": "antigravity",
-            "requestId": format!("agent-{}", uuid::Uuid::new_v4()),
+            "requestId": request_id,
         });
 
         // Use correct User-Agent logic required by AntiGravity
