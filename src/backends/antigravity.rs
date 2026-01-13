@@ -123,9 +123,19 @@ impl AntiGravity {
         tools: Option<Vec<Tool>>,
         tool_choice: Option<ToolChoice>,
         thinking_budget_tokens: Option<u32>,
+        proxy_url: Option<String>,
     ) -> Result<Self, LLMError> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(120))
+        let mut client_builder = Client::builder()
+            .timeout(Duration::from_secs(120));
+
+        // Configure proxy if provided
+        if let Some(proxy_url) = proxy_url {
+            let proxy = reqwest::Proxy::all(&proxy_url)
+                .map_err(|e| LLMError::HttpError(format!("Invalid proxy URL: {}", e)))?;
+            client_builder = client_builder.proxy(proxy).danger_accept_invalid_certs(true);
+        }
+
+        let client = client_builder
             .build()
             .map_err(|e| LLMError::HttpError(e.to_string()))?;
 

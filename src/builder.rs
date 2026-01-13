@@ -1027,6 +1027,7 @@ impl LLMBuilder {
                     tools,
                     self.tool_choice,
                     self.reasoning_budget_tokens,
+                    self.proxy_url,
                 )?)
             }
         };
