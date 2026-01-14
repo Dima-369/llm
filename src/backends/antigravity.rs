@@ -21,8 +21,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     fs,
-    io::{BufRead, BufReader, Write},
-    net::TcpListener,
     path::PathBuf,
     sync::{Arc, RwLock},
     time::Duration,
@@ -274,17 +272,29 @@ impl AntiGravity {
     }
 
     async fn wait_for_callback(&self) -> Result<String, LLMError> {
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", ANTIGRAVITY_CALLBACK_PORT))
+        use tokio::net::TcpListener as TokioTcpListener;
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as TokioBufReader};
+        
+        let listener = TokioTcpListener::bind(format!("127.0.0.1:{}", ANTIGRAVITY_CALLBACK_PORT))
+            .await
             .map_err(|e| LLMError::Generic(format!("Failed to bind callback port: {e}")))?;
 
-        let (mut stream, _) = listener
-            .accept()
+        // Make the accept interruptible with Ctrl-C
+        let accept_result = tokio::select! {
+            result = listener.accept() => result,
+            _ = tokio::signal::ctrl_c() => {
+                return Err(LLMError::Generic("Authentication cancelled by user".into()));
+            }
+        };
+
+        let (mut stream, _) = accept_result
             .map_err(|e| LLMError::Generic(format!("Failed to accept connection: {e}")))?;
 
-        let mut reader = BufReader::new(&stream);
+        let mut reader = TokioBufReader::new(&mut stream);
         let mut request_line = String::new();
         reader
             .read_line(&mut request_line)
+            .await
             .map_err(|e| LLMError::Generic(format!("Failed to read request: {e}")))?;
 
         // Parse: GET /oauth-callback?code=...&state=... HTTP/1.1
@@ -311,7 +321,7 @@ impl AntiGravity {
             .ok_or(LLMError::Generic("No authorization code in callback".into()))?;
 
         let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<h1>Authentication Successful</h1><script>setTimeout(() => window.close(), 1000);</script>";
-        let _ = stream.write_all(response.as_bytes());
+        let _ = stream.write_all(response.as_bytes()).await;
 
         Ok(code)
     }
