@@ -86,7 +86,10 @@ impl ToolCallAccumulator {
                 entry.id.clone_from(id);
             }
             if let Some(name) = name {
-                entry.name.clone_from(name);
+                // Only update name if it's not empty (some providers send empty name in deltas)
+                if !name.is_empty() {
+                    entry.name.clone_from(name);
+                }
             }
             if let Some(args) = arguments {
                 entry.arguments.push_str(args);
