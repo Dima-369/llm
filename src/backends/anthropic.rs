@@ -41,6 +41,7 @@ pub struct Anthropic {
     pub tool_choice: Option<ToolChoice>,
     pub reasoning: bool,
     pub thinking_budget_tokens: Option<u32>,
+    pub base_url: String,
     client: Client,
 }
 
@@ -295,6 +296,7 @@ impl Anthropic {
         tool_choice: Option<ToolChoice>,
         reasoning: Option<bool>,
         thinking_budget_tokens: Option<u32>,
+        base_url: Option<String>,
     ) -> Self {
         let mut builder = Client::builder();
         if let Some(sec) = timeout_seconds {
@@ -318,6 +320,7 @@ impl Anthropic {
             tool_choice,
             reasoning: reasoning.unwrap_or(false),
             thinking_budget_tokens,
+            base_url: base_url.unwrap_or_else(|| "https://api.anthropic.com".to_string()),
             client: builder.build().expect("Failed to build reqwest Client"),
         }
     }
@@ -479,7 +482,8 @@ impl ChatProvider for Anthropic {
             thinking,
         };
 
-        let mut request = self.client.post("https://api.anthropic.com/v1/messages");
+        let url = format!("{}/v1/messages", self.base_url);
+        let mut request = self.client.post(&url);
         if let Some(api_key) = &self.api_key {
             request = request.header("x-api-key", api_key);
         }
@@ -611,7 +615,8 @@ impl ChatProvider for Anthropic {
             thinking: None,
         };
 
-        let mut request = self.client.post("https://api.anthropic.com/v1/messages");
+        let url = format!("{}/v1/messages", self.base_url);
+        let mut request = self.client.post(&url);
         if let Some(api_key) = &self.api_key {
             request = request.header("x-api-key", api_key);
         }
@@ -737,7 +742,8 @@ impl ChatProvider for Anthropic {
             thinking: None,
         };
 
-        let mut request = self.client.post("https://api.anthropic.com/v1/messages");
+        let url = format!("{}/v1/messages", self.base_url);
+        let mut request = self.client.post(&url);
         if let Some(api_key) = &self.api_key {
             request = request.header("x-api-key", api_key);
         }
@@ -849,7 +855,8 @@ impl ModelsProvider for Anthropic {
         &self,
         _request: Option<&ModelListRequest>,
     ) -> Result<Box<dyn ModelListResponse>, LLMError> {
-        let mut req = self.client.get("https://api.anthropic.com/v1/models");
+        let url = format!("{}/v1/models", self.base_url);
+        let mut req = self.client.get(&url);
         if let Some(api_key) = &self.api_key {
             req = req.header("x-api-key", api_key);
         }

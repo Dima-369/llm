@@ -102,6 +102,7 @@ impl Models {
                 secrets
                     .get("ANTHROPIC_THINKING_BUDGET_TOKENS")
                     .and_then(|s| s.parse().ok()),
+                secrets.get("ANTHROPIC_BASE_URL").map(|s| s.to_string()),
             ))),
             Models::Google => Ok(Box::new(crate::backends::google::Google::new(
                 secrets.get("GOOGLE_API_KEY").map(|s| s.to_string()),

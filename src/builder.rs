@@ -703,6 +703,7 @@ impl LLMBuilder {
                         self.tool_choice,
                         self.reasoning,
                         self.reasoning_budget_tokens,
+                        self.base_url,
                     );
 
                     Box::new(anthro)
