@@ -309,7 +309,7 @@ impl Anthropic {
         Self {
             api_key: api_key.map(Into::into),
             model: model.unwrap_or_else(|| "claude-3.5-sonnet-20240620".to_string()),
-            max_tokens: max_tokens.unwrap_or(4096),
+            max_tokens: max_tokens.unwrap_or(32768),
             temperature: temperature.unwrap_or(0.7),
             system: system.unwrap_or_else(|| "You are a helpful assistant.".to_string()),
             timeout_seconds: timeout_seconds.unwrap_or(30),
@@ -631,6 +631,11 @@ impl ChatProvider for Anthropic {
 
         let response = request.send().await?;
 
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let raw_response = response.text().await?;
+            return Err(LLMError::TooManyRequests(raw_response));
+        }
+
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await?;
@@ -757,6 +762,11 @@ impl ChatProvider for Anthropic {
         }
 
         let response = request.send().await?;
+
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let raw_response = response.text().await?;
+            return Err(LLMError::TooManyRequests(raw_response));
+        }
 
         if !response.status().is_success() {
             let status = response.status();
